@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability · Sicherheitslücke
+    url: https://github.com/t3chdock-labs/TillSplit/security/advisories/new
+    about: Please report privately · Bitte vertraulich melden
+  - name: Questions · Fragen
+    url: https://github.com/t3chdock-labs/TillSplit/discussions
+    about: Help with setup and usage · Hilfe bei Einrichtung und Nutzung

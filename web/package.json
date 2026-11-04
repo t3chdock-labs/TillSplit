@@ -1,0 +1,30 @@
+{
+  "name": "tillsplit-web",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "icons": "node scripts/icons.mjs",
+    "build": "tsc -p . --noEmit && vite build",
+    "check": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "^14.0.0",
+    "echarts": "^6.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vite-plugin-pwa": "^2.0.0"
+  }
+}

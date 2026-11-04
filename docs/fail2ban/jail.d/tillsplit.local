@@ -1,0 +1,18 @@
+# Fail2Ban-Jail für TillSplit (auf dem Docker-Host)
+# Liest das Protokoll des TillSplit-Containers. Den Pfad ggf. anpassen:
+#   docker inspect --format '{{.LogPath}}' <container>
+# Bei Docker Swarm wechselt die Container-ID bei jedem Neustart – dann besser den
+# Docker-Logtreiber "journald" nutzen und unten backend = systemd einstellen.
+
+[tillsplit]
+enabled  = true
+filter   = tillsplit
+logpath  = /var/lib/docker/containers/*/*-json.log
+# backend   = systemd
+# journalmatch = CONTAINER_NAME=tillsplit_app
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+# Sperre in der DOCKER-USER-Kette, damit sie auch für veröffentlichte Container-Ports greift
+chain    = DOCKER-USER
+port     = http,https

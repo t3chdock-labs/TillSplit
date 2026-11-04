@@ -1,0 +1,28 @@
+# Typprüfung von Server und Oberfläche bei jedem Push und Pull Request.
+name: Prüfen
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        teil: [server, web]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ${{ matrix.teil }}/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: ${{ matrix.teil }}
+      - run: npm run check
+        working-directory: ${{ matrix.teil }}

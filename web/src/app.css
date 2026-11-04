@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* dark:-Varianten folgen der gewählten Darstellung statt nur dem System */
+@custom-variant dark {
+  &:where([data-modus="dunkel"], [data-modus="dunkel"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-modus="hell"]) *) {
+      @slot;
+    }
+  }
+}
+
+/* Farbwelt: ruhiges Petrol als Akzent, helle und dunkle Variante */
+:root {
+  --grund: #f4f6f8;
+  --flaeche: #ffffff;
+  --flaeche-2: #f8fafc;
+  --rand: #e2e8f0;
+  --text: #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
+  /* Akzent je Benutzer wählbar (darstellung.ts setzt --akzent-l/-d), sonst Petrol */
+  --akzent: var(--akzent-l, #0f766e);
+  --akzent-hell: var(--akzent-hell-l, #ccfbf1);
+  --akzent-text: var(--akzent-text-l, #ffffff);
+  --gut: #15803d;
+  --warnung: #b45309;
+  --fehler: #b91c1c;
+  color-scheme: light;
+}
+
+/* Dunkel: fest gewählt oder nach Systemeinstellung (außer „Hell“ ist gewählt) – beide Blöcke gleich halten */
+:root[data-modus="dunkel"] {
+  --grund: #0b1220;
+  --flaeche: #111a2b;
+  --flaeche-2: #0f1727;
+  --rand: #1f2a3d;
+  --text: #e5e9f0;
+  --text-2: #9aa7bd;
+  --text-3: #5f6d85;
+  --akzent: var(--akzent-d, #2dd4bf);
+  --akzent-hell: var(--akzent-hell-d, #12403c);
+  --akzent-text: var(--akzent-text-d, #04201d);
+  --gut: #4ade80;
+  --warnung: #fbbf24;
+  --fehler: #f87171;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-modus="hell"]) {
+    --grund: #0b1220;
+    --flaeche: #111a2b;
+    --flaeche-2: #0f1727;
+    --rand: #1f2a3d;
+    --text: #e5e9f0;
+    --text-2: #9aa7bd;
+    --text-3: #5f6d85;
+    --akzent: var(--akzent-d, #2dd4bf);
+    --akzent-hell: var(--akzent-hell-d, #12403c);
+    --akzent-text: var(--akzent-text-d, #04201d);
+    --gut: #4ade80;
+    --warnung: #fbbf24;
+    --fehler: #f87171;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-grund: var(--grund);
+  --color-flaeche: var(--flaeche);
+  --color-flaeche-2: var(--flaeche-2);
+  --color-rand: var(--rand);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-akzent: var(--akzent);
+  --color-akzent-hell: var(--akzent-hell);
+  --color-akzent-text: var(--akzent-text);
+  --color-gut: var(--gut);
+  --color-warnung: var(--warnung);
+  --color-fehler: var(--fehler);
+  --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+}
+
+html,
+body {
+  background: var(--grund);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+@utility karte {
+  @apply rounded-2xl border border-rand bg-flaeche shadow-[0_1px_2px_rgba(15,23,42,0.04)];
+}
+@utility knopf {
+  @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition
+    disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility knopf-haupt {
+  @apply knopf bg-akzent text-akzent-text hover:brightness-110 active:brightness-95;
+}
+@utility knopf-zweit {
+  @apply knopf border border-rand bg-flaeche text-text hover:bg-flaeche-2;
+}
+@utility knopf-leise {
+  @apply knopf text-text-2 hover:bg-flaeche-2 hover:text-text;
+}
+@utility eingabe {
+  @apply w-full rounded-xl border border-rand bg-flaeche px-3 py-2 text-sm text-text outline-none
+    placeholder:text-text-3 focus:border-akzent focus:ring-2 focus:ring-akzent/20;
+}
+@utility chip {
+  @apply inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-rand px-3 py-1 text-xs font-medium
+    text-text-2 transition hover:text-text;
+}
+@utility chip-aktiv {
+  @apply border-akzent bg-akzent-hell text-akzent;
+}
+@utility ueberschrift {
+  @apply text-xs font-semibold uppercase tracking-wider text-text-3;
+}
+
+.unten-sicher {
+  padding-bottom: env(safe-area-inset-bottom);
+}

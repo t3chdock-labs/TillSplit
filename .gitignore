@@ -1,0 +1,48 @@
+# Abhängigkeiten und Build-Ergebnisse
+node_modules/
+dist/
+web/dev-dist/
+*.tsbuildinfo
+
+# Zugangsdaten und lokale Einstellungen – niemals einchecken
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+*_passwort
+*_passwort.txt
+
+# Daten, Backups, Testbons
+data/
+backup/
+backups/
+bons/
+*.dump
+*.sql.gz
+*.backup
+*.bak
+*.enc
+*.zip
+*.tar
+*.tar.gz
+*.db
+*.sqlite
+*.sqlite3
+test-bons/
+
+# Protokolle, Editor, Betriebssystem
+*.log
+npm-debug.log*
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# eigene Installation (echte Domain, Knoten, Pfade)
+docker-stack.local.yml
+docs/PRODUKTIV-START.md

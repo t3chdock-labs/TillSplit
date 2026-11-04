@@ -1,0 +1,38 @@
+name: Bug report · Fehler melden
+description: Something does not work as expected · Etwas funktioniert nicht wie erwartet
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security problems please not here** – see SECURITY.md. · **Sicherheitsprobleme bitte nicht hier** – siehe SECURITY.md.
+        Never paste API keys, passwords or real receipts. · Niemals API-Schlüssel, Passwörter oder echte Bons einfügen.
+  - type: input
+    id: version
+    attributes:
+      label: TillSplit version · Version
+      description: Shown in the footer, e.g. 0.1.00 · Steht in der Fußzeile, z. B. 0.1.00
+    validations: { required: true }
+  - type: dropdown
+    id: betrieb
+    attributes:
+      label: How do you run TillSplit? · Wie läuft TillSplit?
+      options: [Docker Compose, Docker Swarm, Kubernetes, Development (npm run dev), Other · Anderes]
+    validations: { required: true }
+  - type: dropdown
+    id: ki
+    attributes:
+      label: AI provider · KI-Anbieter
+      options: [Claude, Ollama, Tesseract + Ollama, Tesseract + Claude, not relevant · egal]
+  - type: textarea
+    id: beschreibung
+    attributes:
+      label: What happened? · Was ist passiert?
+      description: Steps to reproduce, expected and actual result · Schritte, erwartetes und tatsächliches Ergebnis
+    validations: { required: true }
+  - type: textarea
+    id: protokoll
+    attributes:
+      label: Log output · Protokoll
+      description: "`docker logs …` – please remove personal data · bitte persönliche Daten entfernen"
+      render: text
