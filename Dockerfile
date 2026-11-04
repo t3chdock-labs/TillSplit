@@ -1,5 +1,5 @@
 # --- Oberfläche bauen ---
-FROM node:24-bookworm-slim AS web
+FROM node:26-bookworm-slim AS web
 WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci --no-audit --no-fund
@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npx vite build
 
 # --- Server bauen (better-sqlite3 für die Actual-API wird hier kompiliert) ---
-FROM node:24-bookworm AS server
+FROM node:26-bookworm AS server
 WORKDIR /app/server
 COPY server/package*.json ./
 RUN npm ci --no-audit --no-fund
@@ -15,7 +15,7 @@ COPY server/ ./
 RUN npx tsc -p . && npm prune --omit=dev
 
 # --- Laufzeit ---
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 # Sprachen für Tesseract (Debian-Pakete tesseract-ocr-<code>), z. B. --build-arg TESSERACT_SPRACHEN="deu eng fra"
 ARG TESSERACT_SPRACHEN="deu eng"
 # poppler: PDF -> Bild/Text, libheif: iPhone-Fotos (HEIC), tesseract: Texterkennung ohne KI-Bildmodell,
