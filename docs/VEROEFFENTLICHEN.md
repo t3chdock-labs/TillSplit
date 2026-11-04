@@ -391,25 +391,22 @@ Soll es **nur Docker Hub** sein: in `docker.yml` den Schritt „Anmelden bei GHC
 
 ### 9.1 Schema
 
-| | Format | Beispiel | Wo |
-|---|---|---|---|
-| **intern** (SemVer) | `MAJOR.MINOR.PATCH` | `0.1.0`, `0.1.7`, `0.2.0` | `package.json`, git-Tag `v0.1.0`, Docker-Tag `0.1.0` |
-| **Anzeige** | `MAJOR.MINOR.PP` (Patch zweistellig) | `0.1.00`, `0.1.07`, `0.2.00` | Fußzeile, README-Überschrift, Release-Titel |
+Überall dieselbe Schreibweise nach SemVer: `MAJOR.MINOR.PATCH`, z. B. `0.1.1`, `0.2.0`.
+Nur der git-Tag bekommt ein `v` davor (`v0.1.1`), das ist Konvention und startet den Docker-Workflow.
+(Bis 0.1.0 wurde in Fußzeile und Titel zweistellig `0.1.00` angezeigt – das ist abgeschafft.)
 
-Docker und npm verlangen SemVer – dort also immer `0.1.0`. Die Anzeige `0.1.00` ist nur Kosmetik.
 Regel: neue Funktionen → MINOR, Korrekturen → PATCH, inkompatible Änderung (vor 1.0 ebenfalls MINOR) → MAJOR.
 
 Stellen, an denen die Version steht (bei jeder neuen Version alle anpassen):
 
-| Datei | Wert für 0.1.0 |
+| Datei | Wert für 0.1.1 |
 |---|---|
-| `server/package.json` → `version` | `0.1.0` |
-| `web/package.json` → `version` | `0.1.0` |
-| `server/src/index.ts` → `version:` (bei `/api/info`) | `"0.1.00"` (Anzeige) |
-| `server/src/backup.ts` → `version:` (in `info.json`) | `"0.1.0"` |
-| `README.md`, `README.de.md` Zeile 1 | `# TillSplit 0.1.00` |
-| `docker-stack.yml` → `image:` | `t3chdocklabs/tillsplit:0.1.0` |
-| `README*.md` → `docker build -t tillsplit:0.1.0` | `0.1.0` |
+| `server/package.json`, `web/package.json` → `version` | `0.1.1` (`npm version 0.1.1 --no-git-tag-version`) |
+| `server/src/index.ts` → `version:` (bei `/api/info`) | `"0.1.1"` |
+| `web/src/komponenten/Fusszeile.tsx` (Ersatzwert) | `"0.1.1"` |
+| `server/src/backup.ts` → `version:` (in `info.json`) | `"0.1.1"` |
+| `README.md`, `README.de.md` Zeile 1 und `docker pull` / `docker run` | `0.1.1` |
+| `docker-stack.yml` → `image:` | `t3chdocklabs/tillsplit:0.1.1` |
 
 ### 9.2 Erste Version
 
@@ -430,7 +427,7 @@ docker build -t tillsplit:test .
 Dann taggen und den Tag pushen – das startet den Build:
 
 ```powershell
-git tag -a v0.1.0 -m "TillSplit 0.1.00"
+git tag -a v0.1.0 -m "TillSplit 0.1.0"
 git push origin main
 git push origin v0.1.0
 ```
@@ -455,7 +452,7 @@ Token hat „Read & Write“. Workflow danach über *Re-run jobs* erneut starten
 **Releases → Draft a new release**:
 
 - Tag: `v0.1.0` (vorhandenen auswählen)
-- Titel: `TillSplit 0.1.00`
+- Titel: `TillSplit 0.1.0`
 - Text (Beispiel):
 
   ```markdown
@@ -472,7 +469,7 @@ Token hat „Read & Write“. Workflow danach über *Re-run jobs* erneut starten
 
 - „Set as the latest release“ → **Publish release**.
 
-Mit gh: `gh release create v0.1.0 --title "TillSplit 0.1.00" --notes-file notizen.md`
+Mit gh: `gh release create v0.1.0 --title "TillSplit 0.1.0" --notes-file notizen.md`
 (oder `--generate-notes` für eine automatische Liste ab der zweiten Version).
 
 ### 10.2 GHCR-Paket öffentlich machen
@@ -491,7 +488,7 @@ Das Paket wird über das Label `org.opencontainers.image.source` automatisch mit
    Plattformen. (Das komplette README zu kopieren ist unnötig; der Link reicht.)
 2. **Eigene Installation umstellen:** In deiner `docker-stack.local.yml` `image: t3chdocklabs/tillsplit:0.1.0`
    setzen, bei Bedarf `SOURCE_URL` und `DONATE_URL` eintragen, dann
-   `docker stack deploy -c docker-stack.local.yml tillsplit`. Fußzeile prüfen: Version `0.1.00`, Link „Quellcode“.
+   `docker stack deploy -c docker-stack.local.yml tillsplit`. Fußzeile prüfen: Version `0.1.0`, Link „Quellcode“.
 3. **Altkopie:** `C:\Temp\BonBuch-Test` enthält Secrets – nicht ins Repo, nicht hochladen. Wenn nicht mehr
    gebraucht, selbst löschen.
 4. **Bekanntmachen (optional):** Actual-Budget-Community (Discord, GitHub-Discussions von Actual),
@@ -539,15 +536,15 @@ Unter Linux/macOS statt der Backticks `` ` `` am Zeilenende einen Backslash `\` 
 
 ## Anhang B: Checkliste für jede weitere Version
 
-1. Version in allen Stellen aus 9.1 erhöhen (z. B. `0.1.1` intern, `0.1.01` Anzeige).
+1. Version in allen Stellen aus 9.1 erhöhen (z. B. `0.1.1`).
 2. `node werkzeuge/lizenzen.mjs` (falls Abhängigkeiten geändert), `npm run check` in `server` und `web`,
    `node werkzeuge/texte-pruefen.mjs`.
 3. gitleaks über das Repository laufen lassen (Schritt 1.3 b).
 4. Commit, dann:
    ```powershell
-   git tag -a v0.1.1 -m "TillSplit 0.1.01"
+   git tag -a v0.1.1 -m "TillSplit 0.1.1"
    git push origin main
    git push origin v0.1.1
    ```
-5. Actions-Lauf abwarten, Release mit Titel `TillSplit 0.1.01` und *Generate release notes* anlegen.
+5. Actions-Lauf abwarten, Release mit Titel `TillSplit 0.1.1` und *Generate release notes* anlegen.
 6. Eigene Installation auf das neue Image umstellen.
