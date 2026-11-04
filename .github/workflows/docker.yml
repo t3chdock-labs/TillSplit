@@ -47,7 +47,7 @@ jobs:
       # Tag v0.1.0 -> Image-Tags 0.1.0, 0.1 und latest
       - name: Tags und Labels bestimmen
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: |
             ${{ env.DOCKERHUB_IMAGE }}
