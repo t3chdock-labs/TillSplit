@@ -11,6 +11,7 @@ export async function mitOllamaErkennen(
   untergruppen: { name: string; haupt: string }[],
   modell = config.ollamaModell,
   sorten: string[] = [],
+  url = config.ollamaUrl,
 ): Promise<{ ergebnis: BonErgebnis; modell: string; verbrauch: KiVerbrauch }> {
   const schema = bonSchema(untergruppen.map((g) => g.name));
 
@@ -29,7 +30,7 @@ export async function mitOllamaErkennen(
         ? `Diese ${bilder.length} Bilder zeigen einen Bon von oben nach unten. Lies ihn vollständig aus und antworte nur mit JSON.`
         : "Lies diesen Beleg vollständig aus und antworte nur mit JSON.";
 
-  const antwort = await fetch(new URL("/api/chat", config.ollamaUrl), {
+  const antwort = await fetch(new URL("/api/chat", url), {
     method: "POST",
     headers: { "content-type": "application/json" },
     signal: AbortSignal.timeout(10 * 60_000),
@@ -66,8 +67,8 @@ export async function mitOllamaErkennen(
   return { ergebnis: geprueft.data, modell, verbrauch };
 }
 
-export async function ollamaModelle(): Promise<string[]> {
-  const antwort = await fetch(new URL("/api/tags", config.ollamaUrl), { signal: AbortSignal.timeout(5000) });
+export async function ollamaModelle(url = config.ollamaUrl): Promise<string[]> {
+  const antwort = await fetch(new URL("/api/tags", url), { signal: AbortSignal.timeout(5000) });
   if (!antwort.ok) throw new Error(t("Ollama nicht erreichbar ({status})", { status: antwort.status }));
   const daten = (await antwort.json()) as { models?: { name: string }[] };
   return (daten.models ?? []).map((m) => m.name);

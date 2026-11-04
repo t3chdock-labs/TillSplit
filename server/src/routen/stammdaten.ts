@@ -267,8 +267,6 @@ export async function stammdatenRouten(app: FastifyInstance) {
       // Sprache der Installation: Artikelnamen und neue Sorten der KI, Meldungen aus der Hintergrundarbeit
       sprache: standardSprache(),
       sprachen: SPRACHEN.map((code) => ({ code, name: SPRACH_NAMEN[code] })),
-      ollamaUrl: config.ollamaUrl,
-      textModell: config.textModellAnbieter === "claude" ? config.claudeModell : config.ollamaTextModell,
     };
   });
   app.put<{ Body: { ki?: KiEinstellung; actual?: ActualEinstellung; sprache?: string } }>("/api/einstellungen", async (req) => {
@@ -283,6 +281,15 @@ export async function stammdatenRouten(app: FastifyInstance) {
       nurAdmin(req);
       const ki = req.body.ki;
       if (!["claude", "ollama", "tesseract"].includes(ki.anbieter)) throw httpFehler(400, "Unbekannter KI-Anbieter");
+      // nur http(s)-Adressen: der Server ruft den Ollama-Server selbst auf
+      let ollamaUrl: string;
+      try {
+        const u = new URL(String(ki.ollamaUrl ?? config.ollamaUrl).trim());
+        if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error();
+        ollamaUrl = u.toString().replace(/\/$/, "");
+      } catch {
+        throw httpFehler(400, "Ungültige Ollama-Adresse (http:// oder https://)");
+      }
       await einstellungSchreiben("ki", {
         anbieter: ki.anbieter,
         ollamaModell: String(ki.ollamaModell ?? "").slice(0, 100),
@@ -293,6 +300,10 @@ export async function stammdatenRouten(app: FastifyInstance) {
         monatslimit: Math.max(0, Math.min(1_000_000, Number(ki.monatslimit) || 0)),
         bonLimit: Math.max(0, Math.min(10_000, Number(ki.bonLimit) || 0)),
         gegenpruefung: Boolean(ki.gegenpruefung),
+        aufwand: (["low", "medium", "high"] as const).find((a) => a === ki.aufwand) ?? config.claudeAufwand,
+        ollamaUrl,
+        textModellAnbieter: ki.textModellAnbieter === "claude" ? "claude" : "ollama",
+        ollamaTextModell: String(ki.ollamaTextModell ?? "").slice(0, 100) || config.ollamaTextModell,
       } satisfies KiEinstellung);
     }
     if (req.body?.actual) {
@@ -361,7 +372,7 @@ export async function stammdatenRouten(app: FastifyInstance) {
   app.get("/api/ki/ollama-modelle", async (req, antwort) => {
     nurAdmin(req);
     try {
-      return await ollamaModelle();
+      return await ollamaModelle((await kiEinstellung()).ollamaUrl);
     } catch (fehler) {
       return antwort.code(502).send({ fehler: (fehler as Error).message });
     }

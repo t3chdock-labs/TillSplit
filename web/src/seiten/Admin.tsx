@@ -194,7 +194,7 @@ function HaushaltKarte({ h, benutzer, info, ausfuehren }: { h: Haushalt; benutze
         </label>
         <label className="text-xs text-text-2">
           {t("Bon-Ablage")}
-          <input className="eingabe mt-1 font-mono text-[13px]" placeholder={t("(BON_DIR selbst)")} value={f.ablage_pfad} onChange={(e) => setF({ ...f, ablage_pfad: e.target.value })} />
+          <input className="eingabe mt-1 font-mono text-[13px]" placeholder={t("(RECEIPT_DIR selbst)")} value={f.ablage_pfad} onChange={(e) => setF({ ...f, ablage_pfad: e.target.value })} />
           <span className="mt-1 block text-[11px] text-text-3">
             {info.ablageWurzeln.length > 0
               ? t("Unterordner von {verzeichnis} oder absoluter Pfad in {wurzeln}. Bereits abgelegte Bons werden nicht verschoben.", { verzeichnis: info.bonVerzeichnis, wurzeln: info.ablageWurzeln.join(", ") })
@@ -396,6 +396,7 @@ const aktionText: Record<string, string> = {
   backup_gestartet: t("Backup gestartet"),
   backup_heruntergeladen: t("Backup heruntergeladen"),
   backup_geloescht: t("Backup gelöscht"),
+  backup_geaendert: t("Backup-Zeitplan geändert"),
   mitglied_entfernt: t("Mitglied entfernt"),
 };
 
@@ -508,7 +509,53 @@ function Backups() {
         </div>
         <p className="text-xs text-text-3">{t("Wiederherstellen: siehe README, Abschnitt „Backup und Wiederherstellung“.")}</p>
       </section>
+      <BackupPlan einstellungen={e} ausfuehren={ausfuehren} />
     </div>
+  );
+}
+
+function BackupPlan({ einstellungen, ausfuehren }: { einstellungen: BackupDaten["einstellungen"]; ausfuehren: (aktion: () => Promise<unknown>, meldung: string) => Promise<void> }) {
+  const [plan, setPlan] = useState({ stunden: einstellungen.stunden, behalten: einstellungen.behalten, mitBons: einstellungen.mitBons });
+  useEffect(() => setPlan({ stunden: einstellungen.stunden, behalten: einstellungen.behalten, mitBons: einstellungen.mitBons }), [einstellungen.stunden, einstellungen.behalten, einstellungen.mitBons]);
+  return (
+    <section className="karte space-y-3 p-5">
+      <h2 className="font-semibold">{t("Zeitplan")}</h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-xs text-text-2">
+          {t("Automatisch sichern")}
+          <select className="eingabe mt-1" value={plan.stunden} onChange={(ev) => setPlan({ ...plan, stunden: Number(ev.target.value) })}>
+            {[...new Set([0, 6, 12, 24, 48, 168, plan.stunden])]
+              .sort((a, b) => a - b)
+              .map((h) => (
+                <option key={h} value={h}>
+                  {h === 0 ? t("Nur von Hand") : h === 24 ? t("Täglich") : h === 168 ? t("Wöchentlich") : t("Alle {stunden} Stunden", { stunden: h })}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="block text-xs text-text-2">
+          {t("Anzahl behalten")}
+          <input
+            type="number"
+            min={1}
+            max={365}
+            className="eingabe mt-1"
+            value={plan.behalten}
+            onChange={(ev) => setPlan({ ...plan, behalten: Number(ev.target.value) })}
+          />
+        </label>
+      </div>
+      <label className="flex items-start gap-2 text-xs text-text-2">
+        <input type="checkbox" className="mt-0.5" checked={plan.mitBons} onChange={(ev) => setPlan({ ...plan, mitBons: ev.target.checked })} />
+        <span>{t("Bon-Dateien mitsichern (ohne Haken nur Datenbank und Schlüssel – deutlich kleiner, die Bilder müssen dann anders gesichert werden)")}</span>
+      </label>
+      <p className="text-[11px] text-text-3">
+        {t("Ablageort und Backup-Passwort werden beim Start des Containers festgelegt (BACKUP_DIR, BACKUP_PASSWORD) und lassen sich hier bewusst nicht ändern.")}
+      </p>
+      <button className="knopf-haupt" onClick={() => void ausfuehren(() => api.put("/api/admin/backups/einstellungen", plan), t("Gespeichert"))}>
+        {t("Speichern")}
+      </button>
+    </section>
   );
 }
 

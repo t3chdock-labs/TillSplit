@@ -43,9 +43,9 @@ async function schritteErmitteln(haushaltId: number, benutzerId: number, admin: 
     einstellungLesen<unknown>("finanzen", null, haushaltId),
   ]);
 
-  const kiBereit = ki.anbieter === "claude" ? Boolean(process.env.ANTHROPIC_API_KEY) : ki.anbieter === "ollama" ? Boolean(config.ollamaUrl) : true;
+  const kiBereit = ki.anbieter === "claude" ? Boolean(process.env.ANTHROPIC_API_KEY) : ki.anbieter === "ollama" ? Boolean(ki.ollamaUrl) : true;
   const kiName = { claude: "Claude", ollama: "Ollama", tesseract: "Tesseract" }[ki.anbieter];
-  const backup = backupEinstellungen();
+  const backup = await backupEinstellungen();
 
   const schritte: Schritt[] = [
     {
@@ -138,7 +138,7 @@ async function schritteErmitteln(haushaltId: number, benutzerId: number, admin: 
     {
       id: "backup",
       titel: t("Backup einschalten"),
-      text: t("Mit einem Backup-Passwort (BACKUP_PASSWORD bzw. Secret tillsplit_backup_passwort) sichert TillSplit Datenbank und Bons regelmäßig verschlüsselt."),
+      text: t("Mit einem Backup-Passwort (BACKUP_PASSWORD bzw. Secret tillsplit_backup_password) sichert TillSplit Datenbank und Bons regelmäßig verschlüsselt."),
       ziel: "/admin?reiter=backups",
       erledigt: backup.passwortGesetzt,
       optional: false,

@@ -2,10 +2,10 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
 import { actualTrennen } from "../actual.js";
-import { backupEinstellungen, backupListe, backupPfad, backupStarten, backupStatus } from "../backup.js";
+import { backupEinstellungen, backupListe, backupPfad, backupStarten, backupStatus, type BackupPlan } from "../backup.js";
 import { httpFehler, nurAdmin, protokollieren, type Rechte } from "../auth.js";
 import { config } from "../config.js";
-import { sql } from "../db.js";
+import { einstellungSchreiben, sql } from "../db.js";
 import { datumFormat, SPRACHEN, sprache, t, type Sprache } from "../i18n.js";
 import { ablageCacheLeeren, ablagePruefen } from "../dateien.js";
 import { passwortHashen, passwortSchwach, verschluesseln } from "../sicherheit.js";
@@ -228,7 +228,21 @@ export async function adminRouten(app: FastifyInstance) {
   // ---------- Backups ----------
   app.get("/api/admin/backups", async (req) => {
     nurAdmin(req);
-    return { einstellungen: backupEinstellungen(), status: backupStatus(), liste: await backupListe() };
+    return { einstellungen: await backupEinstellungen(), status: backupStatus(), liste: await backupListe() };
+  });
+
+  app.put<{ Body: { stunden?: number; behalten?: number; mitBons?: boolean } }>("/api/admin/backups/einstellungen", async (req) => {
+    nurAdmin(req);
+    const b = req.body ?? {};
+    const plan = {
+      // 0 = nur von Hand, höchstens alle 30 Tage
+      stunden: Math.max(0, Math.min(720, Math.round(Number(b.stunden) || 0))),
+      behalten: Math.max(1, Math.min(365, Math.round(Number(b.behalten) || 1))),
+      mitBons: Boolean(b.mitBons),
+    } satisfies BackupPlan;
+    await einstellungSchreiben("backup", plan);
+    await protokollieren(req, "backup_geaendert", plan);
+    return { ok: true };
   });
 
   app.post("/api/admin/backups", async (req) => {

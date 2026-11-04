@@ -1,68 +1,58 @@
-# TillSplit für Docker Swarm
+# TillSplit for Docker Swarm
 #   docker stack deploy -c docker-stack.yml tillsplit
-# Vorher: Image bauen/pushen, Secrets anlegen, NFS-Pfad und Domain anpassen (siehe README).
-# Jede Variable NAME kann auch als NAME_FILE (z. B. aus /run/secrets) gesetzt werden.
+#
+# Before the first deployment:
+#   1. Create the secrets (see README, "Create secrets")
+#   2. Replace the placeholders below: domain, database node, NFS share
+#   3. Connect your reverse proxy: network "proxy" below (must exist), optional Traefik labels
+#
+# Only settings needed to start the container live here. AI provider, models, Ollama,
+# Actual Budget, backup schedule etc. are configured in the web interface after the first login.
+# Every variable NAME can also be set as NAME_FILE (e.g. /run/secrets/...) or directly as a value.
 
 services:
   app:
-    image: ${TILLSPLIT_IMAGE:-t3chdocklabs/tillsplit:0.1.0}
+    image: t3chdocklabs/tillsplit:0.1.1
     environment:
       DATABASE_URL: postgres://tillsplit@db:5432/tillsplit
-      DATABASE_PASSWORD_FILE: /run/secrets/tillsplit_db_passwort
-      # Öffentliche Adresse (für Passkeys und HSTS), genau so, wie sie im Browser steht
-      PUBLIC_URL: https://bon.example.com
-      # AGPL: Link „Quellcode“ (bei eigenen Änderungen auf das eigene Repository zeigen lassen)
-      QUELLCODE_URL: https://github.com/t3chdock-labs/TillSplit
-      # optionaler Knopf „TillSplit unterstützen“
-      SPENDEN_URL: https://ko-fi.com/tamperold
-      # Schlüssel für gespeicherte Zugangsdaten (Actual-Passwörter, TOTP) – unbedingt sichern!
-      TILLSPLIT_SCHLUESSEL_FILE: /run/secrets/tillsplit_schluessel
-      # Erster Administrator beim allerersten Start (danach ohne Wirkung). Ohne diese Angaben
-      # steht ein Einrichtungscode im Protokoll: docker service logs tillsplit_app
-      # ADMIN_EMAIL: admin@example.de
-      # ADMIN_PASSWORD_FILE: /run/secrets/tillsplit_admin_passwort
-      # Zwei-Faktor-Anmeldung für alle verlangen (empfohlen, wenn TillSplit im Internet steht)
-      ZWEI_FAKTOR_PFLICHT: "true"
-      # Netze, aus denen der Reverse Proxy kommt (für die echte Client-IP in Sperren und Protokoll)
-      TRUST_PROXY: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      DATABASE_PASSWORD_FILE: /run/secrets/tillsplit_db_password
+      # Public address exactly as shown in the browser (required for passkeys and HSTS)
+      PUBLIC_URL: https://tillsplit.example.com
+      # Key for stored credentials (Actual passwords, TOTP secrets) – keep a copy somewhere safe!
+      TILLSPLIT_KEY_FILE: /run/secrets/tillsplit_key
+      # Claude API key (only needed when using Claude for recognition)
       ANTHROPIC_API_KEY_FILE: /run/secrets/tillsplit_anthropic_key
-      # Backups (verschlüsselt); BACKUP_DIR möglichst auf einem anderen Share als die Bons
-      BACKUP_PASSWORD_FILE: /run/secrets/tillsplit_backup_passwort
+      # Encrypted backups: password and target directory (schedule is set in the web interface)
+      BACKUP_PASSWORD_FILE: /run/secrets/tillsplit_backup_password
       BACKUP_DIR: /backup
-      BACKUP_STUNDEN: "24"
-      # Benachrichtigungen per E-Mail (optional; ohne SMTP nur die Glocke in der Oberfläche)
-      # SMTP_HOST: smtp.example.com
-      # SMTP_PORT: "587"                  # 465 mit SMTP_SICHER: "true"
-      # SMTP_USER: tillsplit@example.com
-      # SMTP_PASSWORD_FILE: /run/secrets/tillsplit_smtp_passwort
-      # SMTP_FROM: "TillSplit <tillsplit@example.com>"
-      # Benachrichtigungen per Telegram (optional, Bot bei @BotFather anlegen)
-      # TELEGRAM_BOT_TOKEN_FILE: /run/secrets/tillsplit_telegram_token
-      # Zeitzone für Erinnerungen
+      # Require two-factor authentication for all users (recommended when reachable from the internet)
+      REQUIRE_2FA: "true"
+      # Networks your reverse proxy connects from (for the real client IP in lockouts and the audit log)
+      TRUST_PROXY: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      # Time zone for reminders
       TZ: Europe/Berlin
-      # Tesseract: Text-Gliederung lokal per Ollama oder günstig per Claude
-      TEXTMODELL_ANBIETER: ollama
-      OLLAMA_TEXT_MODEL: qwen2.5:7b
-      KI_ANBIETER: claude
-      # günstiges Modell zuerst; passen die Positionen nicht zur Summe, liest Opus nach
-      CLAUDE_MODEL: claude-haiku-5-5
-      CLAUDE_MODEL_NACHPRUEFEN: claude-opus-5-5
-      CLAUDE_EFFORT: medium
-      OLLAMA_URL: http://LAPTOP-ADRESSE:11434
-      OLLAMA_MODEL: qwen2.5vl:7b
-      ACTUAL_SERVER_URL: https://ACTUAL-ADRESSE
-      ACTUAL_SYNC_ID: SYNC-ID-AUS-ACTUAL
-      ACTUAL_PASSWORD_FILE: /run/secrets/tillsplit_actual_passwort
-      # wie oft wartende Kartenzahlungen gegen neue Bankbuchungen geprüft werden
-      ABGLEICH_STUNDEN: "6"
-      # nur bei Ende-zu-Ende-verschlüsseltem Budget:
-      # ACTUAL_E2E_PASSWORD_FILE: /run/secrets/tillsplit_actual_e2e
+      # --- optional ---
+      # First administrator on the very first start (ignored afterwards). Without it,
+      # a setup code is printed to the log: docker service logs tillsplit_app
+      # ADMIN_EMAIL: admin@example.com
+      # ADMIN_PASSWORD_FILE: /run/secrets/tillsplit_admin_password
+      # E-mail notifications (without SMTP only the bell in the web interface)
+      # SMTP_HOST: smtp.example.com
+      # SMTP_PORT: "587"                  # 465 together with SMTP_SECURE: "true"
+      # SMTP_USER: tillsplit@example.com
+      # SMTP_PASSWORD_FILE: /run/secrets/tillsplit_smtp_password
+      # SMTP_FROM: "TillSplit <tillsplit@example.com>"
+      # Telegram notifications (create a bot with @BotFather)
+      # TELEGRAM_BOT_TOKEN_FILE: /run/secrets/tillsplit_telegram_token
+      # AGPL: if you run a modified version, point the "Source code" link to your repository
+      # SOURCE_URL: https://github.com/YOUR-NAME/TillSplit
+      # "Support TillSplit" button: points to the project by default, "off" hides it
+      # DONATE_URL: "off"
     secrets:
-      - tillsplit_db_passwort
-      - tillsplit_schluessel
-      - tillsplit_backup_passwort
+      - tillsplit_db_password
+      - tillsplit_key
+      - tillsplit_backup_password
       - tillsplit_anthropic_key
-      - tillsplit_actual_passwort
     volumes:
       - tillsplit_daten:/data
       - tillsplit_bons:/data/bons
@@ -71,54 +61,53 @@ services:
     deploy:
       replicas: 1
       restart_policy: { condition: on-failure }
-      labels:
-        # Beispiel für Traefik – bei einem anderen Reverse Proxy entfallen die Labels
-        traefik.enable: "true"
-        traefik.docker.network: proxy
-        traefik.http.routers.tillsplit.rule: Host(`bon.example.com`)
-        traefik.http.routers.tillsplit.entrypoints: websecure
-        traefik.http.routers.tillsplit.tls.certresolver: letsencrypt
-        traefik.http.services.tillsplit.loadbalancer.server.port: "8080"
+      # Example for Traefik – uncomment and adapt if you use it (TillSplit listens on port 8080)
+      # labels:
+      #   traefik.enable: "true"
+      #   traefik.docker.network: proxy
+      #   traefik.http.routers.tillsplit.rule: Host(`tillsplit.example.com`)
+      #   traefik.http.routers.tillsplit.entrypoints: websecure
+      #   traefik.http.routers.tillsplit.tls.certresolver: letsencrypt
+      #   traefik.http.services.tillsplit.loadbalancer.server.port: "8080"
 
   db:
     image: postgres:17-alpine
     environment:
       POSTGRES_DB: tillsplit
       POSTGRES_USER: tillsplit
-      POSTGRES_PASSWORD_FILE: /run/secrets/tillsplit_db_passwort
-    secrets: [tillsplit_db_passwort]
+      POSTGRES_PASSWORD_FILE: /run/secrets/tillsplit_db_password
+    secrets: [tillsplit_db_password]
     volumes:
       - tillsplit_db:/var/lib/postgresql/data
     networks: [intern]
-    # Für Grafana: Port nur bei Bedarf freigeben und einen Lese-Benutzer anlegen (siehe README)
     deploy:
       replicas: 1
       placement:
-        # Postgres-Daten auf einem festen Knoten halten (nicht auf NFS)
-        constraints: [node.hostname == DEIN-DB-KNOTEN]
+        # Keep the Postgres data on a fixed node (local disk, not NFS)
+        constraints: [node.hostname == YOUR-DB-NODE]
 
 volumes:
   tillsplit_daten:
-  # Backups: am besten ein eigener NFS-Share (wie tillsplit_bons, anderer Pfad)
-  tillsplit_backup:
   tillsplit_db:
-  # Bon-Ablage auf NFS: <Share>/<Jahr>/<Monat>/<Datum>_<Händler>_<Summe>.jpg|pdf
+  # Backups: ideally a separate share (like tillsplit_bons, different path)
+  tillsplit_backup:
+  # Receipt storage on NFS: <share>/<year>/<month>/<date>_<store>_<total>.jpg|pdf
   tillsplit_bons:
     driver: local
     driver_opts:
       type: nfs
-      o: addr=NAS-ADRESSE,rw,nfsvers=4.1
-      device: ":/PFAD/ZUM/SHARE/Kassenbons"
+      o: addr=NAS-ADDRESS,rw,nfsvers=4.1
+      device: ":/PATH/TO/SHARE/receipts"
 
 networks:
   intern:
     driver: overlay
+  # Existing overlay network of your reverse proxy (e.g. docker network create -d overlay proxy)
   proxy:
     external: true
 
 secrets:
-  tillsplit_db_passwort: { external: true }
-  tillsplit_schluessel: { external: true }
-  tillsplit_backup_passwort: { external: true }
+  tillsplit_db_password: { external: true }
+  tillsplit_key: { external: true }
+  tillsplit_backup_password: { external: true }
   tillsplit_anthropic_key: { external: true }
-  tillsplit_actual_passwort: { external: true }

@@ -135,7 +135,7 @@ async function bonVerarbeiten(bonId: number, anbieter?: KiAnbieter, zwischenspei
     const sorten = await bekannteSorten(h);
     // Kostenschutz: Monats- und Bon-Limit vor jeder Claude-Anfrage
     const ki = await kiEinstellung();
-    const nutztClaude = modellWahl || (anbieter ?? ki.anbieter) === "claude" || ((anbieter ?? ki.anbieter) === "tesseract" && config.textModellAnbieter === "claude");
+    const nutztClaude = modellWahl || (anbieter ?? ki.anbieter) === "claude" || ((anbieter ?? ki.anbieter) === "tesseract" && ki.textModellAnbieter === "claude");
     if (nutztClaude) await kostenPruefen(bonId);
     const erster = await erkennen(eingabe, untergruppen, modellWahl ? "claude" : anbieter, sorten, { zwischenspeichern, modell: modellWahl });
     let { ergebnis, modell, verbrauch, sekunden } = erster;

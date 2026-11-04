@@ -141,7 +141,7 @@
   "Mitglieder einladen": "Invite members",
   "Weitere Personen anlegen und ihnen Rechte geben – zum Beispiel „Nur hochladen“ für Kinder, ohne Einblick in die Finanzen.": "Add more people and give them permissions – for example “Upload only” for children, without access to the finances.",
   "Backup einschalten": "Turn on backups",
-  "Mit einem Backup-Passwort (BACKUP_PASSWORD bzw. Secret tillsplit_backup_passwort) sichert TillSplit Datenbank und Bons regelmäßig verschlüsselt.": "With a backup password (BACKUP_PASSWORD or secret tillsplit_backup_passwort), TillSplit regularly backs up the database and receipts, encrypted.",
+  "Mit einem Backup-Passwort (BACKUP_PASSWORD bzw. Secret tillsplit_backup_password) sichert TillSplit Datenbank und Bons regelmäßig verschlüsselt.": "With a backup password (BACKUP_PASSWORD or secret tillsplit_backup_password), TillSplit regularly backs up the database and receipts, encrypted.",
   "Alle {stunden} Stunden, {behalten} Sicherungen werden behalten.": "Every {stunden} hours; {behalten} backups are kept.",
   "Ersten Bon hochladen": "Upload your first receipt",
   "Fotografiere einen Kassenbon oder lade eine PDF hoch und prüfe das Ergebnis der Erkennung.": "Take a photo of a receipt or upload a PDF and check the recognition result.",
@@ -273,5 +273,6 @@
   "E-Mail: {fehler}": "Email: {fehler}",
   "Telegram: gesendet": "Telegram: sent",
   "Telegram: {fehler}": "Telegram: {fehler}",
-  "Ungültige Darstellung": "Invalid appearance settings"
+  "Ungültige Darstellung": "Invalid appearance settings",
+  "Ungültige Ollama-Adresse (http:// oder https://)": "Invalid Ollama address (http:// or https://)"
 }

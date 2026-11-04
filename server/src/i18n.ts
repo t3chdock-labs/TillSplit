@@ -8,7 +8,7 @@ import fs from "node:fs";
  *
  * Sprache einer Anfrage: Kopfzeile x-sprache (setzt die Oberfläche), sonst Accept-Language.
  * Ohne Anfrage (Hintergrundarbeit: Bon lesen, Abgleich) gilt die Sprache der Installation
- * (bei der Ersteinrichtung gewählt, unter Einstellungen änderbar, Vorgabe TILLSPLIT_SPRACHE).
+ * (bei der Ersteinrichtung gewählt, unter Einstellungen änderbar, Vorgabe TILLSPLIT_LANGUAGE).
  */
 export type Sprache = string;
 
@@ -31,7 +31,9 @@ export const SPRACH_NAMEN: Record<Sprache, string> = Object.fromEntries(
 
 const gueltig = (s: unknown): boolean => typeof s === "string" && s in woerterbuecher;
 
-let standard: Sprache = gueltig(process.env.TILLSPLIT_SPRACHE) ? process.env.TILLSPLIT_SPRACHE! : "de";
+// eigenständig gelesen (i18n lädt ohne config.ts); TILLSPLIT_SPRACHE ist der frühere Name
+const vorgabe = process.env.TILLSPLIT_LANGUAGE ?? process.env.TILLSPLIT_SPRACHE;
+let standard: Sprache = gueltig(vorgabe) ? vorgabe! : "de";
 /** Sprache der Installation (aus der Datenbank, beim Start und bei Änderung gesetzt) */
 export const standardSpracheSetzen = (s: unknown) => {
   if (gueltig(s)) standard = s as Sprache;

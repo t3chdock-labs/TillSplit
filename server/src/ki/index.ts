@@ -35,6 +35,13 @@ export type KiEinstellung = {
   bonLimit: number;
   /** Gegenprüfung Bild <-> Daten mit Tesseract (lokal, kostet Rechenzeit; Standard aus) */
   gegenpruefung: boolean;
+  /** Denkaufwand von Claude (Vorgabe aus CLAUDE_EFFORT) */
+  aufwand: "low" | "medium" | "high";
+  /** Ollama-Server (Vorgabe aus OLLAMA_URL) */
+  ollamaUrl: string;
+  /** Wer den Tesseract-Text gliedert (Vorgabe aus TEXT_MODEL_PROVIDER und OLLAMA_TEXT_MODEL) */
+  textModellAnbieter: "ollama" | "claude";
+  ollamaTextModell: string;
 };
 
 const kiStandard = (): KiEinstellung => ({
@@ -47,6 +54,10 @@ const kiStandard = (): KiEinstellung => ({
   monatslimit: 50,
   bonLimit: 0.5,
   gegenpruefung: false,
+  aufwand: config.claudeAufwand,
+  ollamaUrl: config.ollamaUrl,
+  textModellAnbieter: config.textModellAnbieter,
+  ollamaTextModell: config.ollamaTextModell,
 });
 
 /** Anzeigewährung samt Kurs; ohne bekannten Kurs bleibt es bei US-Dollar */
@@ -133,7 +144,7 @@ export async function erkennen(
   const einstellung = await kiEinstellung();
   const gewaehlt = anbieter ?? einstellung.anbieter;
   // ohne ausdrückliches Modell (Nachlesen) gilt das in den Einstellungen gewählte
-  claudeOptionen = { ...claudeOptionen, modell: claudeOptionen.modell ?? einstellung.erkennungsModell };
+  claudeOptionen = { ...claudeOptionen, modell: claudeOptionen.modell ?? einstellung.erkennungsModell, aufwand: claudeOptionen.aufwand ?? einstellung.aufwand };
   const start = Date.now();
 
   if (gewaehlt === "tesseract") {
@@ -142,15 +153,15 @@ export async function erkennen(
     if (text.replace(/\s/g, "").length < 15) throw new Error(t("Tesseract hat auf dem Beleg keinen Text gefunden – Foto schärfer oder heller aufnehmen"));
     const textEingabe: KiEingabe = { art: "text", text };
     const { ergebnis, modell, verbrauch } =
-      config.textModellAnbieter === "claude"
+      einstellung.textModellAnbieter === "claude"
         ? await mitClaudeErkennen(textEingabe, untergruppen, sorten, claudeOptionen)
-        : await mitOllamaErkennen(textEingabe, untergruppen, config.ollamaTextModell, sorten);
+        : await mitOllamaErkennen(textEingabe, untergruppen, einstellung.ollamaTextModell, sorten, einstellung.ollamaUrl);
     return { ergebnis, anbieter: "tesseract", modell: `tesseract + ${modell}`, verbrauch, sekunden: (Date.now() - start) / 1000 };
   }
 
   const { ergebnis, modell, verbrauch } =
     gewaehlt === "ollama"
-      ? await mitOllamaErkennen(eingabe, untergruppen, einstellung.ollamaModell, sorten)
+      ? await mitOllamaErkennen(eingabe, untergruppen, einstellung.ollamaModell, sorten, einstellung.ollamaUrl)
       : await mitClaudeErkennen(eingabe, untergruppen, sorten, claudeOptionen);
   return { ergebnis, anbieter: gewaehlt, modell, verbrauch, sekunden: (Date.now() - start) / 1000 };
 }

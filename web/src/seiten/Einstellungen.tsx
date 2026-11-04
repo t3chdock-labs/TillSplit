@@ -22,6 +22,10 @@ type EinstellungenDaten = {
     monatslimit: number;
     bonLimit: number;
     gegenpruefung: boolean;
+    aufwand: "low" | "medium" | "high";
+    ollamaUrl: string;
+    textModellAnbieter: "ollama" | "claude";
+    ollamaTextModell: string;
   };
   claudeModelle: { id: string; name: string }[];
   /** Kosten im laufenden Monat je Währung (jede Anfrage mit dem Kurs ihres Tages) */
@@ -43,8 +47,6 @@ type EinstellungenDaten = {
   /** Sprache der Installation: Artikelnamen der KI, Startgruppen, Meldungen aus der Hintergrundarbeit */
   sprache: string;
   sprachen: { code: string; name: string }[];
-  ollamaUrl: string;
-  textModell: string;
 };
 
 function KategorieWahl({ kategorien, wert, onWahl, leer = t("– keine –") }: { kategorien: ActualKategorie[]; wert: string | null; onWahl: (id: string | null) => void; leer?: string }) {
@@ -602,6 +604,21 @@ function Warengruppen() {
   );
 }
 
+function OllamaServer({ entwurf, setEntwurf }: { entwurf: EinstellungenDaten; setEntwurf: (e: EinstellungenDaten) => void }) {
+  return (
+    <label className="block text-xs text-text-2">
+      {t("Ollama-Server")}
+      <input
+        className="eingabe mt-1 font-mono text-[13px]"
+        placeholder="http://192.168.1.50:11434"
+        value={entwurf.ki.ollamaUrl}
+        onChange={(e) => setEntwurf({ ...entwurf, ki: { ...entwurf.ki, ollamaUrl: e.target.value } })}
+      />
+      <span className="mt-1 block text-[11px] text-text-3">{t("Adresse, unter der der TillSplit-Server Ollama erreicht. Die Modellliste wird nach dem Speichern neu geladen.")}</span>
+    </label>
+  );
+}
+
 function Verbindungen() {
   const { daten, neuLaden } = useDaten<EinstellungenDaten>("/api/einstellungen");
   const { daten: status } = useDaten<{ eingerichtet: boolean; verbunden: boolean; fehler: string | null }>("/api/actual/status");
@@ -630,6 +647,9 @@ function Verbindungen() {
     // neue Anzeigewährung gleich überall verwenden
     const kurs = entwurf.kurse[entwurf.ki.waehrung];
     if (admin && kurs) waehrungSetzen(entwurf.ki.waehrung, kurs.kurs);
+    // Modellliste mit der (evtl. geänderten) Ollama-Adresse neu holen
+    setOllamaModelle(null);
+    setOllamaFehler(null);
     setGespeichert(true);
     setTimeout(() => setGespeichert(false), 2500);
     neuLaden();
@@ -668,8 +688,42 @@ function Verbindungen() {
           ))}
         </div>
         {entwurf.ki.anbieter === "tesseract" ? (
-          <div className="text-sm text-text-2">
-            {t("Tesseract liest den Text des Bons, das Sprachmodell {modell} gliedert ihn in Positionen (über TEXTMODELL_ANBIETER und OLLAMA_TEXT_MODEL änderbar). Braucht deutlich weniger Rechenleistung als ein Bildmodell, ist bei zerknitterten oder blassen Bons aber ungenauer.", { modell: entwurf.textModell })}
+          <div className="space-y-2 text-sm text-text-2">
+            <p>
+              {t("Tesseract liest den Text des Bons, ein Sprachmodell gliedert ihn in Positionen. Braucht deutlich weniger Rechenleistung als ein Bildmodell, ist bei zerknitterten oder blassen Bons aber ungenauer.")}
+            </p>
+            <div className="text-xs">{t("Text gliedern mit")}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["ollama", t("Ollama (lokal)")],
+                  ["claude", t("Claude (günstig)")],
+                ] as const
+              ).map(([wert, text]) => (
+                <button
+                  key={wert}
+                  className={`chip ${entwurf.ki.textModellAnbieter === wert ? "chip-aktiv" : ""}`}
+                  onClick={() => setEntwurf({ ...entwurf, ki: { ...entwurf.ki, textModellAnbieter: wert } })}
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+            {entwurf.ki.textModellAnbieter === "ollama" ? (
+              <>
+                <OllamaServer entwurf={entwurf} setEntwurf={setEntwurf} />
+                <label className="block text-xs">
+                  {t("Textmodell (z. B. qwen2.5:7b)")}
+                  <input
+                    className="eingabe mt-1"
+                    value={entwurf.ki.ollamaTextModell}
+                    onChange={(e) => setEntwurf({ ...entwurf, ki: { ...entwurf.ki, ollamaTextModell: e.target.value } })}
+                  />
+                </label>
+              </>
+            ) : (
+              <p className="text-xs">{t("Es wird das unter Claude gewählte Erkennungsmodell verwendet.")}</p>
+            )}
           </div>
         ) : entwurf.ki.anbieter === "claude" ? (
           <div className="text-sm text-text-2">
@@ -689,6 +743,18 @@ function Verbindungen() {
               </select>
             </label>
             {modellText[entwurf.ki.erkennungsModell] && <p className="mt-1 text-xs text-text">{modellText[entwurf.ki.erkennungsModell]}</p>}
+            <label className="mt-3 block text-xs">
+              {t("Denkaufwand")}
+              <select
+                className="eingabe mt-1"
+                value={entwurf.ki.aufwand}
+                onChange={(e) => setEntwurf({ ...entwurf, ki: { ...entwurf.ki, aufwand: e.target.value as "low" | "medium" | "high" } })}
+              >
+                <option value="low">{t("Niedrig – schneller und günstiger")}</option>
+                <option value="medium">{t("Mittel – empfohlen")}</option>
+                <option value="high">{t("Hoch – gründlicher, teurer")}</option>
+              </select>
+            </label>
             <p className="mt-1 text-xs">
               {t("Kosten je Bon sind Richtwerte aus bisherigen Bons (lange Bons kosten mehr). Anthropic rechnet in US-Dollar ab. Vorgabe beim ersten Start kommt aus CLAUDE_MODEL; die Auswahl hier hat Vorrang.")}
             </p>
@@ -753,7 +819,7 @@ function Verbindungen() {
           </div>
         ) : (
           <div className="space-y-2 text-sm">
-            <div className="text-text-2">{t("Server: {url}", { url: entwurf.ollamaUrl })}</div>
+            <OllamaServer entwurf={entwurf} setEntwurf={setEntwurf} />
             {ollamaFehler && <Hinweis art="warnung">{ollamaFehler}</Hinweis>}
             <label className="block text-xs text-text-2">
               {t("Modell (muss Bilder verstehen, z. B. qwen2.5vl, gemma3, llama3.2-vision)")}
@@ -784,7 +850,7 @@ function Verbindungen() {
           )}
         </div>
         {status && !status.eingerichtet && (
-          <Hinweis>{t("Zugangsdaten werden über ACTUAL_SERVER_URL, ACTUAL_PASSWORD und ACTUAL_SYNC_ID im Container gesetzt.")}</Hinweis>
+          <Hinweis>{t("Die Zugangsdaten zu Actual trägt ein Administrator unter Admin-Bereich → Haushalte ein.")}</Hinweis>
         )}
         {status?.fehler && <Hinweis art="fehler">{status.fehler}</Hinweis>}
         {budgets && budgets.length > 1 && (

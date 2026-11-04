@@ -92,7 +92,7 @@ function rp(req: FastifyRequest) {
 
 const istHttps = (req: FastifyRequest) => req.protocol === "https" || (config.oeffentlicheUrl ?? "").startsWith("https:");
 
-/** Gültigkeit einer vollwertigen Sitzung: gemerkt SITZUNG_TAGE, sonst 12 Stunden (und Cookie nur bis zum Schließen des Browsers) */
+/** Gültigkeit einer vollwertigen Sitzung: gemerkt SESSION_DAYS, sonst 12 Stunden (und Cookie nur bis zum Schließen des Browsers) */
 const sitzungsDauer = (merken: boolean) => (merken ? `${config.sitzungTage} days` : "12 hours");
 
 async function sitzungAnlegen(req: FastifyRequest, antwort: FastifyReply, benutzerId: number, voll: boolean, haushaltId?: number | null, merken = true) {

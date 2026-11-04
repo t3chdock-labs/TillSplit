@@ -162,25 +162,11 @@ docker run --rm -v "${PWD}:/repo" zricethezav/gitleaks:latest git /repo --redact
 Sobald feststeht, dass das Repository `github.com/t3chdock-labs/TillSplit` heißt (Schritt 4), diese Stellen ändern.
 Du kannst sie schon jetzt ändern – sie werden ja erst mit dem Push sichtbar.
 
-### 2.1 Quellcode-Link (`QUELLCODE_URL`)
+### 2.1 Quellcode-Link (`SOURCE_URL`, erledigt)
 
-Pflicht wegen AGPL: Die Fußzeile verlinkt auf den Quellcode.
-
-| Datei | Zeile | neu |
-|---|---|---|
-| `server/src/config.ts` | 40 | `env("QUELLCODE_URL", "https://github.com/t3chdock-labs/TillSplit")` |
-| `docker-stack.yml` | `QUELLCODE_URL:` | `https://github.com/t3chdock-labs/TillSplit` |
-
-Alle Vorkommen auf einmal ersetzen:
-
-```powershell
-Get-ChildItem server\src\config.ts, docker-stack.yml | ForEach-Object {
-  (Get-Content $_ -Raw -Encoding utf8).Replace('https://github.com/TILLSPLIT-REPOSITORY','https://github.com/t3chdock-labs/TillSplit') |
-    Set-Content $_ -Encoding utf8 -NoNewline }
-```
-
-> Hinweis: Windows PowerShell 5.1 schreibt mit `-Encoding utf8` ein BOM an den Dateianfang. Für `.ts` und
-> `.yml` ist das unschädlich, wer es vermeiden will, ändert die zwei Zeilen lieber im Editor.
+Pflicht wegen AGPL: Die Fußzeile verlinkt auf den Quellcode. Der Standard steht fest im Code
+(`server/src/config.ts`: `https://github.com/t3chdock-labs/TillSplit`), in der Vorlage ist nichts zu setzen.
+Wer TillSplit verändert betreibt, setzt `SOURCE_URL` auf sein eigenes Repository.
 
 ### 2.2 Ko-fi (erledigt)
 
@@ -190,17 +176,14 @@ Der Spenden-Link `https://ko-fi.com/tamperold` ist bereits eingetragen:
 |---|---|
 | `.github/FUNDING.yml` | `ko_fi: tamperold` (GitHub zeigt damit den Knopf „Sponsor“) |
 | `README.md` / `README.de.md` | Badge oben und Abschnitt „Support/Unterstützen“ |
-| `docker-stack.yml` | `SPENDEN_URL` (Knopf „☕ TillSplit unterstützen“ in der App) |
+| `server/src/config.ts` | Standard für `DONATE_URL` (Knopf „☕ TillSplit unterstützen“ in jeder Installation) |
 
-Der Knopf in der App erscheint nur, wenn `SPENDEN_URL` gesetzt ist.
+Betreiber können den Knopf mit `DONATE_URL=off` ausblenden oder mit einem eigenen Link ersetzen.
 
-### 2.3 Image-Name in Doku und Stack
+### 2.3 Image-Name in Doku und Stack (erledigt)
 
-Damit andere das fertige Image nutzen können, statt selbst zu bauen:
-
-- `docker-stack.yml`: `image: ${TILLSPLIT_IMAGE:-t3chdocklabs/tillsplit:0.1.0}`
-- `README.md` / `README.de.md`, Abschnitt „1. Image bauen“: ergänzen um
-  „Oder fertiges Image nutzen: `docker pull t3chdocklabs/tillsplit:0.1.0` (amd64 und arm64)“.
+- `docker-stack.yml`: `image: t3chdocklabs/tillsplit:0.1.0`
+- `README.md` / `README.de.md`, Abschnitt „1. Image“: `docker pull` für Docker Hub und GHCR.
 
 ### 2.4 Sonstiges prüfen
 
@@ -422,8 +405,8 @@ Stellen, an denen die Version steht (bei jeder neuen Version alle anpassen):
 |---|---|
 | `server/package.json` → `version` | `0.1.0` |
 | `web/package.json` → `version` | `0.1.0` |
-| `server/src/index.ts` Zeile 93 → `version:` | `"0.1.00"` (Anzeige) |
-| `server/src/backup.ts` Zeile 69 → `version:` | `"0.1.0"` |
+| `server/src/index.ts` → `version:` (bei `/api/info`) | `"0.1.00"` (Anzeige) |
+| `server/src/backup.ts` → `version:` (in `info.json`) | `"0.1.0"` |
 | `README.md`, `README.de.md` Zeile 1 | `# TillSplit 0.1.00` |
 | `docker-stack.yml` → `image:` | `t3chdocklabs/tillsplit:0.1.0` |
 | `README*.md` → `docker build -t tillsplit:0.1.0` | `0.1.0` |
@@ -507,7 +490,7 @@ Das Paket wird über das Label `org.opencontainers.image.source` automatisch mit
    Text einfügen: Was ist TillSplit, `docker pull`-Befehl, Link zum GitHub-README, Lizenz AGPL-3.0, unterstützte
    Plattformen. (Das komplette README zu kopieren ist unnötig; der Link reicht.)
 2. **Eigene Installation umstellen:** In deiner `docker-stack.local.yml` `image: t3chdocklabs/tillsplit:0.1.0`
-   setzen, `QUELLCODE_URL` und ggf. `SPENDEN_URL` eintragen, dann
+   setzen, bei Bedarf `SOURCE_URL` und `DONATE_URL` eintragen, dann
    `docker stack deploy -c docker-stack.local.yml tillsplit`. Fußzeile prüfen: Version `0.1.00`, Link „Quellcode“.
 3. **Altkopie:** `C:\Temp\BonBuch-Test` enthält Secrets – nicht ins Repo, nicht hochladen. Wenn nicht mehr
    gebraucht, selbst löschen.

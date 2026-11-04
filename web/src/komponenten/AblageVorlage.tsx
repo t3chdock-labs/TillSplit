@@ -228,7 +228,7 @@ export function AblageVorlage() {
           <span>
             {t("Bon-Dateien verschlüsselt ablegen")}
             <span className="block text-xs text-text-3">
-              {t("AES-256 mit dem Schlüssel des Servers (TILLSPLIT_SCHLUESSEL). Die Ordnerstruktur bleibt, die Dateien enden auf")} <code>.enc</code> {t("und lassen sich nur noch über TillSplit öffnen – nicht mehr direkt auf dem NAS. Geht der Schlüssel verloren, sind die Bons unwiederbringlich verloren.")}
+              {t("AES-256 mit dem Schlüssel des Servers (TILLSPLIT_KEY). Die Ordnerstruktur bleibt, die Dateien enden auf")} <code>.enc</code> {t("und lassen sich nur noch über TillSplit öffnen – nicht mehr direkt auf dem NAS. Geht der Schlüssel verloren, sind die Bons unwiederbringlich verloren.")}
             </span>
           </span>
         </label>

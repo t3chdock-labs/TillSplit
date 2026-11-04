@@ -53,12 +53,12 @@ export const sha256 = (text: string) => crypto.createHash("sha256").update(text)
 let schluessel: Buffer | null = null;
 
 /**
- * Schlüssel aus TILLSPLIT_SCHLUESSEL (bzw. _FILE), sonst einmalig erzeugt und in DATA_DIR abgelegt.
+ * Schlüssel aus TILLSPLIT_KEY (bzw. _FILE), sonst einmalig erzeugt und in DATA_DIR abgelegt.
  * Ohne diesen Schlüssel lassen sich gespeicherte Actual-Passwörter und TOTP-Geheimnisse nicht mehr lesen.
  */
 function geheimSchluessel(): Buffer {
   if (schluessel) return schluessel;
-  let roh = process.env.TILLSPLIT_SCHLUESSEL;
+  let roh = process.env.TILLSPLIT_KEY;
   if (!roh) {
     const datei = path.join(config.datenVerzeichnis, ".schluessel");
     if (!fs.existsSync(datei)) {
@@ -76,10 +76,10 @@ function geheimSchluessel(): Buffer {
 // Ableitungskontext – nach dem ersten Start nicht mehr ändern, sonst lassen sich gespeicherte Geheimnisse und Bons nicht mehr entschlüsseln
 const abgeleitet = (zweck: string) => crypto.createHash("sha256").update(`tillsplit:${zweck}:`).update(geheimSchluessel()).digest();
 
-/** Datei des Hauptschlüssels, falls er nicht per TILLSPLIT_SCHLUESSEL kommt (für das Backup) */
+/** Datei des Hauptschlüssels, falls er nicht per TILLSPLIT_KEY kommt (für das Backup) */
 export function schluesselRoh(): string {
   geheimSchluessel();
-  return process.env.TILLSPLIT_SCHLUESSEL ?? fs.readFileSync(path.join(config.datenVerzeichnis, ".schluessel"), "utf8").trim();
+  return process.env.TILLSPLIT_KEY ?? fs.readFileSync(path.join(config.datenVerzeichnis, ".schluessel"), "utf8").trim();
 }
 
 // --- Bon-Dateien: "BBENC1" + IV (12) + Tag (16) + verschlüsselter Inhalt ---

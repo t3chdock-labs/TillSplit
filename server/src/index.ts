@@ -90,7 +90,7 @@ app.addHook("onSend", async (req, antwort, nutzlast) => {
 // Öffentliche Angaben für Fußzeile und Anmeldeseite
 const nurHttp = (url?: string) => (url && /^https?:\/\//.test(url) ? url : null);
 app.get("/api/info", async () => ({
-  version: "0.1.00",
+  version: "0.1.01",
   lizenz: "AGPL-3.0",
   quellcode: nurHttp(config.quellcodeUrl),
   spenden: nurHttp(config.spendenUrl),
@@ -148,10 +148,10 @@ await ersteinrichtung();
 await app.listen({ host: "0.0.0.0", port: config.port });
 await offeneWiederaufnehmen();
 // wartende Kartenzahlungen regelmäßig gegen neu importierte Bankbuchungen prüfen
-abgleichPlanen(Number(process.env.ABGLEICH_STUNDEN ?? 6));
+abgleichPlanen(Number(process.env.MATCH_INTERVAL_HOURS ?? 6));
 // Actual-Buchungen für das Finanz-Dashboard auffrischen
-finanzenPlanen(Number(process.env.FINANZEN_STUNDEN ?? 3));
-// regelmäßige Backups (BACKUP_STUNDEN, nur mit BACKUP_PASSWORD)
+finanzenPlanen(Number(process.env.FINANCE_INTERVAL_HOURS ?? 3));
+// regelmäßige Backups (Zeitplan unter Admin-Bereich → Backups, nur mit BACKUP_PASSWORD)
 backupPlanen();
 // Benachrichtigungen: gesammelte Mails/Telegram-Nachrichten, Erinnerungen, Telegram-Bot
 benachrichtigungenPlanen();

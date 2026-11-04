@@ -7,7 +7,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { config } from "./config.js";
-import { sql } from "./db.js";
+import { einstellungLesen, sql } from "./db.js";
 import { schluesselRoh } from "./sicherheit.js";
 
 /**
@@ -19,12 +19,22 @@ const KOPF = Buffer.from("BBBAK1");
 const scrypt = promisify(crypto.scrypt) as (pw: string, salz: Buffer, laenge: number, opt: crypto.ScryptOptions) => Promise<Buffer>;
 const SCRYPT = { N: 2 ** 17, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
 
-export const backupEinstellungen = () => ({
-  verzeichnis: config.backup.verzeichnis,
+/** Zeitplan aus der Oberfläche (Admin-Bereich → Backups); ohne gespeicherte Werte gelten BACKUP_INTERVAL_HOURS, BACKUP_KEEP, BACKUP_INCLUDE_RECEIPTS */
+export type BackupPlan = { stunden: number; behalten: number; mitBons: boolean };
+
+export const backupPlan = async (): Promise<BackupPlan> => ({
   stunden: config.backup.stunden,
   behalten: config.backup.behalten,
-  passwortGesetzt: Boolean(config.backup.passwort),
   mitBons: config.backup.mitBons,
+  ...(await einstellungLesen<Partial<BackupPlan>>("backup", {})),
+});
+
+// Verzeichnis und Passwort bleiben bewusst außerhalb der Datenbank: das Verzeichnis muss im Container
+// eingebunden sein, und ohne Passwort ließe sich ein Backup nach einem Totalausfall nicht entschlüsseln
+export const backupEinstellungen = async () => ({
+  verzeichnis: config.backup.verzeichnis,
+  passwortGesetzt: Boolean(config.backup.passwort),
+  ...(await backupPlan()),
 });
 
 let laeuft: Promise<string> | null = null;
@@ -55,6 +65,7 @@ function pgUmgebung(): NodeJS.ProcessEnv {
 async function backupErstellen(): Promise<string> {
   const passwort = config.backup.passwort;
   if (!passwort) throw new Error("BACKUP_PASSWORD ist nicht gesetzt – ohne Passwort werden keine Backups erstellt");
+  const plan = await backupPlan();
   await fsp.mkdir(config.backup.verzeichnis, { recursive: true, mode: 0o700 });
   const arbeit = await fsp.mkdtemp(path.join(config.datenVerzeichnis, "backup-"));
   const name = `tillsplit-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.tar.gz.enc`;
@@ -66,11 +77,11 @@ async function backupErstellen(): Promise<string> {
     const haushalte = await sql`select id, name, ablage_pfad, verschluesseln from haushalte order by id`;
     await fsp.writeFile(
       path.join(arbeit, "info.json"),
-      JSON.stringify({ erstellt: new Date().toISOString(), version: "0.1.0", bonVerzeichnis: config.bonVerzeichnis, ablageWurzeln: config.ablageWurzeln, haushalte }, null, 2),
+      JSON.stringify({ erstellt: new Date().toISOString(), version: "0.1.1", bonVerzeichnis: config.bonVerzeichnis, ablageWurzeln: config.ablageWurzeln, haushalte }, null, 2),
     );
 
     // Bon-Ablagen (mit absolutem Pfad; tar entfernt den führenden Schrägstrich)
-    const ablagen = config.backup.mitBons
+    const ablagen = plan.mitBons
       ? [config.bonVerzeichnis, ...config.ablageWurzeln].filter((p) => fs.existsSync(p))
       : [];
     const tar = spawn("tar", ["-czf", "-", "-C", arbeit, "datenbank.dump", "schluessel.txt", "info.json", ...ablagen], { stdio: ["ignore", "pipe", "pipe"] });
@@ -94,7 +105,7 @@ async function backupErstellen(): Promise<string> {
     const code = await tarEnde;
     if (code > 1) throw new Error(`tar: ${tarFehler.trim().slice(0, 300)}`);
     await fsp.rename(teil, ziel);
-    await aufraeumen();
+    await aufraeumen(plan.behalten);
     letzterFehler = null;
     return name;
   } catch (e) {
@@ -112,9 +123,9 @@ export function backupStarten(): Promise<string> {
   return laeuft;
 }
 
-async function aufraeumen() {
+async function aufraeumen(behalten: number) {
   const alle = await backupListe();
-  for (const alt of alle.slice(config.backup.behalten)) await fsp.rm(path.join(config.backup.verzeichnis, alt.name), { force: true });
+  for (const alt of alle.slice(Math.max(1, behalten))) await fsp.rm(path.join(config.backup.verzeichnis, alt.name), { force: true });
 }
 
 export async function backupListe(): Promise<{ name: string; groesse: number; erstellt: string }[]> {
@@ -140,13 +151,15 @@ export async function backupPfad(name: string): Promise<string | null> {
 
 export const backupStatus = () => ({ laeuft: Boolean(laeuft), letzterFehler });
 
-/** Regelmäßig sichern, wenn das letzte Backup älter als BACKUP_STUNDEN ist */
+/** Regelmäßig sichern, wenn das letzte Backup älter als der eingestellte Abstand ist (0 = nur von Hand) */
 export function backupPlanen(): void {
-  if (!config.backup.stunden || !config.backup.passwort) return;
+  if (!config.backup.passwort) return;
   const pruefen = async () => {
+    const { stunden } = await backupPlan();
+    if (!stunden) return;
     const [neuestes] = await backupListe();
     const alter = neuestes ? (Date.now() - Date.parse(neuestes.erstellt)) / 3_600_000 : Infinity;
-    if (alter >= config.backup.stunden) {
+    if (alter >= stunden) {
       await backupStarten()
         .then((n) => console.log(`Backup erstellt: ${n}`))
         .catch((e) => console.error("Backup fehlgeschlagen:", (e as Error).message));

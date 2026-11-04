@@ -139,8 +139,8 @@ const innerhalb = (pfad: string, wurzel: string) => {
 };
 
 /**
- * Ablagepfad eines Haushalts prüfen: relativ = Unterordner von BON_DIR,
- * absolut nur innerhalb von BON_DIR oder ABLAGE_WURZELN (kein Schreiben an beliebige Stellen).
+ * Ablagepfad eines Haushalts prüfen: relativ = Unterordner von RECEIPT_DIR,
+ * absolut nur innerhalb von RECEIPT_DIR oder STORAGE_ROOTS (kein Schreiben an beliebige Stellen).
  */
 export function ablagePruefen(eingabe: string): string {
   const pfad = eingabe.trim();
