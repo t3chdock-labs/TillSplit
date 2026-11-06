@@ -540,11 +540,12 @@ Unter Linux/macOS statt der Backticks `` ` `` am Zeilenende einen Backslash `\` 
 2. `node werkzeuge/lizenzen.mjs` (falls Abhängigkeiten geändert), `npm run check` in `server` und `web`,
    `node werkzeuge/texte-pruefen.mjs`.
 3. gitleaks über das Repository laufen lassen (Schritt 1.3 b).
-4. Commit, dann:
+4. `CHANGELOG.md` und `CHANGELOG.de.md` um die neue Version ergänzen (Neu / Geändert / Behoben, Vergleichslink unten).
+5. Commit, dann:
    ```powershell
    git tag -a v0.1.1 -m "TillSplit 0.1.1"
    git push origin main
    git push origin v0.1.1
    ```
-5. Actions-Lauf abwarten, Release mit Titel `TillSplit 0.1.1` und *Generate release notes* anlegen.
-6. Eigene Installation auf das neue Image umstellen.
+6. Actions-Lauf abwarten, Release mit Titel `TillSplit 0.1.1` anlegen, als Text den Abschnitt aus `CHANGELOG.md`.
+7. Eigene Installation auf das neue Image umstellen.
