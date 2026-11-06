@@ -77,7 +77,7 @@ async function backupErstellen(): Promise<string> {
     const haushalte = await sql`select id, name, ablage_pfad, verschluesseln from haushalte order by id`;
     await fsp.writeFile(
       path.join(arbeit, "info.json"),
-      JSON.stringify({ erstellt: new Date().toISOString(), version: "0.1.1", bonVerzeichnis: config.bonVerzeichnis, ablageWurzeln: config.ablageWurzeln, haushalte }, null, 2),
+      JSON.stringify({ erstellt: new Date().toISOString(), version: "0.1.2", bonVerzeichnis: config.bonVerzeichnis, ablageWurzeln: config.ablageWurzeln, haushalte }, null, 2),
     );
 
     // Bon-Ablagen (mit absolutem Pfad; tar entfernt den führenden Schrägstrich)

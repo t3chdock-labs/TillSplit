@@ -208,6 +208,7 @@ function HaushaltKarte({ h, benutzer, info, ausfuehren }: { h: Haushalt; benutze
         <label className="text-xs text-text-2">
           {t("Sync-ID des Budgets")}
           <input className="eingabe mt-1 font-mono text-[13px]" value={f.actual_sync_id} onChange={(e) => setF({ ...f, actual_sync_id: e.target.value })} />
+          <span className="mt-1 block text-[11px] text-text-3">{t("Weitere Budgets desselben Servers wählst du unter Einstellungen → Actual Budget – dafür keinen zweiten Haushalt anlegen.")}</span>
         </label>
         <label className="text-xs text-text-2">
           {t("Actual-Passwort")}

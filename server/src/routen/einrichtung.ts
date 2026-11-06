@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { actualEingerichtet } from "../actual.js";
+import { actualEingerichtet, actualEinstellung, buchungsBudgets } from "../actual.js";
 import { httpFehler, zugriff } from "../auth.js";
 import { backupEinstellungen } from "../backup.js";
 import { einstellungLesen, einstellungSchreiben, sql } from "../db.js";
@@ -23,6 +23,8 @@ export type Schritt = {
   /** Stand wird nicht erkannt, sondern von Hand abgehakt */
   vonHand: boolean;
   hinweis?: string;
+  /** Teilschritte mit eigenem Ziel (z. B. „Finanzen einrichten“) */
+  unterpunkte?: { titel: string; ziel: string; erledigt: boolean }[];
 };
 
 // Schritte, die nur durch Abhaken als erledigt gelten
@@ -42,6 +44,26 @@ async function schritteErmitteln(haushaltId: number, benutzerId: number, admin: 
     einstellungLesen<unknown>("actual", null, haushaltId),
     einstellungLesen<unknown>("finanzen", null, haushaltId),
   ]);
+
+  // Kategorien je Budget gelten als zugeordnet, wenn jeder Bereich in jedem Buchungs-Budget eine Kategorie hat
+  // (oder dort eine Standard-Kategorie greift) – oder wenn „Warengruppen prüfen“ abgehakt ist
+  const kategorienZugeordnet = async () => {
+    if (!actual) return false;
+    const [budgets, a] = await Promise.all([buchungsBudgets(haushaltId), actualEinstellung(haushaltId)]);
+    for (const [i, b] of budgets.entries()) {
+      if (i === 0 ? a.standardKategorie : a.standardKategorien[b]) continue;
+      const [{ offen }] =
+        i === 0
+          ? await sql<{ offen: number }[]>`select count(*)::int as offen from gruppen where haushalt_id = ${haushaltId} and eltern_id is null and actual_kategorie_id is null`
+          : await sql<{ offen: number }[]>`
+              select count(*)::int as offen from gruppen g
+               where g.haushalt_id = ${haushaltId} and g.eltern_id is null
+                 and not exists (select 1 from gruppen_kategorien k where k.gruppe_id = g.id and k.sync_id = ${b})`;
+      if (offen > 0) return false;
+    }
+    return budgets.length > 0;
+  };
+  const kategorienFertig = abgehakt("gruppen") || (await kategorienZugeordnet());
 
   const kiBereit = ki.anbieter === "claude" ? Boolean(process.env.ANTHROPIC_API_KEY) : ki.anbieter === "ollama" ? Boolean(ki.ollamaUrl) : true;
   const kiName = { claude: "Claude", ollama: "Ollama", tesseract: "Tesseract" }[ki.anbieter];
@@ -95,6 +117,23 @@ async function schritteErmitteln(haushaltId: number, benutzerId: number, admin: 
       hinweis: actual ? undefined : t("Erst nach dem Verbinden mit Actual möglich."),
     },
     {
+      // mehrere Budgets auf demselben Server gehören in EINEN Haushalt – hier wird das sichtbar
+      id: "finanzen",
+      titel: t("Finanzen einrichten"),
+      text: t("Liegen weitere Budgets auf demselben Actual-Server (z. B. ein Haushaltskonto), nimmst du sie hier dazu – kein zweiter Haushalt nötig."),
+      ziel: "/einstellungen?reiter=verbindungen",
+      erledigt: actualGespeichert != null && finanzGespeichert != null && kategorienFertig,
+      optional: true,
+      nurAdmin: false,
+      vonHand: false,
+      hinweis: actual ? undefined : t("Erst nach dem Verbinden mit Actual möglich."),
+      unterpunkte: [
+        { titel: t("Weitere Budgets zum Buchen wählen"), ziel: "/einstellungen?reiter=verbindungen", erledigt: actualGespeichert != null },
+        { titel: t("Budgets fürs Finanz-Dashboard und Vermögenskonten festlegen"), ziel: "/einstellungen?reiter=finanzen", erledigt: finanzGespeichert != null },
+        { titel: t("Kategorien je Budget zuordnen"), ziel: "/einstellungen?reiter=gruppen", erledigt: kategorienFertig },
+      ],
+    },
+    {
       id: "gruppen",
       titel: t("Warengruppen prüfen"),
       text: t("Die Standard-Warengruppen passen für die meisten Haushalte. Benenne sie nach Bedarf um und ordne ihnen Actual-Kategorien zu."),
@@ -113,17 +152,6 @@ async function schritteErmitteln(haushaltId: number, benutzerId: number, admin: 
       optional: false,
       nurAdmin: false,
       vonHand: true,
-    },
-    {
-      id: "finanzen",
-      titel: t("Finanzübersicht einrichten"),
-      text: t("Budgets und Depots für das Finanz-Dashboard auswählen."),
-      ziel: "/einstellungen?reiter=finanzen",
-      erledigt: finanzGespeichert != null,
-      optional: true,
-      nurAdmin: false,
-      vonHand: false,
-      hinweis: actual ? undefined : t("Erst nach dem Verbinden mit Actual möglich."),
     },
     {
       id: "mitglieder",

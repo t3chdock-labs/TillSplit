@@ -41,6 +41,25 @@ function zeitraumVon(art: ZeitArt, wert: { jahr: string; monat: string; tag: str
   return { von: null, bis: null };
 }
 
+/** Kleines Vorschaubild: Fotos verkleinert, bei PDFs die erste Seite; schlägt das fehl, bleibt die Beschriftung */
+function Vorschaubild({ bon }: { bon: BonListeneintrag }) {
+  const [fehler, setFehler] = useState(false);
+  const pdf = bon.datei_mime === "application/pdf";
+  if (fehler) return <div className="flex size-full items-center justify-center text-[10px] font-bold text-text-3">{pdf ? "PDF" : ""}</div>;
+  return (
+    <div className="relative size-full bg-white">
+      <img
+        src={`/api/bons/${bon.id}/vorschau?v=${bon.datei_version ?? ""}`}
+        alt=""
+        loading="lazy"
+        onError={() => setFehler(true)}
+        className="size-full object-cover object-top"
+      />
+      {pdf && <span className="absolute right-0 bottom-0 rounded-tl bg-red-600 px-1 text-[8px] leading-tight font-bold text-white">PDF</span>}
+    </div>
+  );
+}
+
 export function Bons() {
   // Filter aus dem Link übernehmen (z. B. Benachrichtigung „Prüfung ausstehend“ -> ?status=erkannt)
   const [adresse] = useSearchParams();
@@ -235,11 +254,7 @@ export function Bons() {
             return (
               <Link key={b.id} to={`/bons/${b.id}`} className="flex items-center gap-4 px-4 py-3 transition hover:bg-flaeche-2">
                 <div className="size-12 shrink-0 overflow-hidden rounded-lg border border-rand bg-flaeche-2">
-                  {b.datei_mime.startsWith("image/") ? (
-                    <img src={`/api/bons/${b.id}/datei?v=${b.datei_version ?? ""}`} alt="" loading="lazy" className="size-full object-cover object-top" />
-                  ) : (
-                    <div className="flex size-full items-center justify-center text-[10px] font-bold text-text-3">PDF</div>
-                  )}
+                  <Vorschaubild bon={b} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

@@ -136,8 +136,6 @@
   "Die Standard-Warengruppen passen für die meisten Haushalte. Benenne sie nach Bedarf um und ordne ihnen Actual-Kategorien zu.": "The default product groups suit most households. Rename them as needed and assign Actual categories.",
   "Ablage der Bon-Dateien": "Receipt file storage",
   "Ordner- und Dateinamen per Drag & Drop zusammenstellen und bei Bedarf die Verschlüsselung der Dateien einschalten.": "Build folder and file names by drag & drop and turn on file encryption if needed.",
-  "Finanzübersicht einrichten": "Set up the finance overview",
-  "Budgets und Depots für das Finanz-Dashboard auswählen.": "Choose budgets and investment accounts for the finance dashboard.",
   "Mitglieder einladen": "Invite members",
   "Weitere Personen anlegen und ihnen Rechte geben – zum Beispiel „Nur hochladen“ für Kinder, ohne Einblick in die Finanzen.": "Add more people and give them permissions – for example “Upload only” for children, without access to the finances.",
   "Backup einschalten": "Turn on backups",
@@ -274,5 +272,12 @@
   "Telegram: gesendet": "Telegram: sent",
   "Telegram: {fehler}": "Telegram: {fehler}",
   "Ungültige Darstellung": "Invalid appearance settings",
-  "Ungültige Ollama-Adresse (http:// oder https://)": "Invalid Ollama address (http:// or https://)"
+  "Ungültige Ollama-Adresse (http:// oder https://)": "Invalid Ollama address (http:// or https://)",
+  "Finanzen einrichten": "Set up finances",
+  "Liegen weitere Budgets auf demselben Actual-Server (z. B. ein Haushaltskonto), nimmst du sie hier dazu – kein zweiter Haushalt nötig.": "If more budgets live on the same Actual server (e.g. a joint household account), add them here – no second household needed.",
+  "Weitere Budgets zum Buchen wählen": "Choose additional budgets for booking",
+  "Budgets fürs Finanz-Dashboard und Vermögenskonten festlegen": "Pick budgets for the finance dashboard and asset accounts",
+  "Kategorien je Budget zuordnen": "Map categories per budget",
+  "Unbekanntes Konto": "Unknown account",
+  "Ohne Konto": "No account"
 }

@@ -7,6 +7,7 @@ import { Farbpunkt, Hinweis, KontoOptionen, Kopf, useDaten } from "../komponente
 import { Symbol } from "../komponenten/Symbol";
 import { useSitzung } from "../sitzung";
 import { AblageVorlage } from "../komponenten/AblageVorlage";
+import { KategorieWahl } from "../komponenten/KategorieWahl";
 import { sprache, t } from "../i18n";
 
 type ActualKategorie = { id: string; name: string; gruppe: string };
@@ -48,26 +49,6 @@ type EinstellungenDaten = {
   sprache: string;
   sprachen: { code: string; name: string }[];
 };
-
-function KategorieWahl({ kategorien, wert, onWahl, leer = t("– keine –") }: { kategorien: ActualKategorie[]; wert: string | null; onWahl: (id: string | null) => void; leer?: string }) {
-  const gruppen = [...new Set(kategorien.map((k) => k.gruppe))];
-  return (
-    <select className="eingabe py-1.5 text-[13px]" value={wert ?? ""} onChange={(e) => onWahl(e.target.value || null)}>
-      <option value="">{leer}</option>
-      {gruppen.map((g) => (
-        <optgroup key={g} label={g}>
-          {kategorien
-            .filter((k) => k.gruppe === g)
-            .map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.name}
-              </option>
-            ))}
-        </optgroup>
-      ))}
-    </select>
-  );
-}
 
 const waehrungNamen: Record<string, string> = {
   EUR: t("Euro"),
@@ -398,7 +379,10 @@ function Warengruppen() {
   const { daten: budgets } = useDaten<ActualBudget[]>(kategorien ? "/api/actual/budgets" : null);
   const weitere = (budgets ?? []).filter((b) => b.buchen && !b.haupt);
   const hauptName = budgets?.find((b) => b.haupt)?.name;
+  const hauptSync = budgets?.find((b) => b.haupt)?.syncId;
   const [weitereKategorien, setWeitereKategorien] = useState<Record<string, ActualKategorie[]>>({});
+  // "" = Haupt-Budget, sonst Sync-ID eines weiteren Buchungs-Budgets
+  const [budgetWahl, setBudgetWahl] = useState("");
   const { daten: einstellungen, neuLaden: einstellungenNeu } = useDaten<EinstellungenDaten>(weitere.length ? "/api/einstellungen" : null);
   useEffect(() => {
     for (const b of budgets ?? []) {
@@ -434,6 +418,13 @@ function Warengruppen() {
   if (!gruppen) return null;
   const haupt = gruppen.filter((g) => g.eltern_id == null).sort((a, b) => a.sortierung - b.sortierung);
 
+  // immer nur EIN Budget zuordnen: oben wählen, darunter eine Auswahl je Gruppe (Anzahl der Budgets egal)
+  const gewaehlt = weitere.find((b) => b.syncId === budgetWahl) ?? null;
+  const liste = gewaehlt ? weitereKategorien[gewaehlt.syncId] : kategorien;
+  const wertVon = (g: Gruppe) => (gewaehlt ? (g.weitere_kategorien?.[gewaehlt.syncId] ?? null) : g.actual_kategorie_id);
+  const setzen = (g: Gruppe, id: string | null) =>
+    void (gewaehlt ? zuordnen(g.id, gewaehlt.syncId, id) : aendern(g.id, { actual_kategorie_id: id }));
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-text-2">
@@ -444,125 +435,107 @@ function Warengruppen() {
       {fehler && <Hinweis art="fehler">{fehler}</Hinweis>}
       {info && <Hinweis art="gut">{info}</Hinweis>}
 
-      {weitere.map((b) => (
-        <section key={b.syncId} className="karte flex flex-wrap items-end gap-3 p-4 text-sm">
-          <div className="min-w-56 flex-1">
-            <div className="font-medium">{t("Kategorien im Budget „{name}“", { name: b.name })}</div>
+      {kategorien && hauptSync && (
+        <section className="karte space-y-3 p-4 text-sm">
+          <div>
+            <div className="font-medium">{weitere.length > 0 ? t("Kategorien zuordnen für Budget") : t("Actual-Kategorien zuordnen")}</div>
             <div className="text-xs text-text-2">
-              {t("Jede Gruppe hat dafür eine zweite Auswahl. Ohne eigene Zuordnung gilt die des Bereichs, sonst die Standard-Kategorie.")}
+              {weitere.length > 0
+                ? t("Wähle das Actual-Budget, dessen Kategorien du unten den Warengruppen zuordnest. Ohne eigene Zuordnung gilt die des Bereichs, sonst die Standard-Kategorie.")
+                : t("Ohne eigene Zuordnung gilt bei Untergruppen die Kategorie des Bereichs, sonst die Standard-Kategorie.")}{" "}
+              {t("Gleichnamige Kategorien werden beim Verbinden eines Budgets automatisch zugeordnet.")}
             </div>
           </div>
-          <label className="block w-full text-xs text-text-2 sm:w-56">
-            {t("Standard-Kategorie")}
-            <div className="mt-1">
-              <KategorieWahl
-                kategorien={weitereKategorien[b.syncId] ?? []}
-                wert={einstellungen?.actual.standardKategorien?.[b.syncId] ?? null}
-                onWahl={(id) => void standardSetzen(b.syncId, id)}
-              />
+          {weitere.length > 0 && (
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("Budget")}>
+              {[{ syncId: "", name: hauptName ?? t("Haupt-Budget") }, ...weitere].map((b) => (
+                <button key={b.syncId} role="radio" aria-checked={budgetWahl === b.syncId} className={`chip ${budgetWahl === b.syncId ? "chip-aktiv" : ""}`} onClick={() => setBudgetWahl(b.syncId)}>
+                  {b.name}
+                  {b.syncId === "" && <span className="text-text-3">{t("(Haupt-Budget)")}</span>}
+                </button>
+              ))}
             </div>
-          </label>
-          <button
-            className="knopf-zweit"
-            onClick={() =>
-              void ausfuehren(async () => {
-                const r = await api.post<{ gesetzt: number }>("/api/gruppen/kategorien-vorschlagen", { budget: b.syncId });
-                setInfo(t("{n} Zuordnung nach Namen vorgeschlagen – bitte prüfen.|{n} Zuordnungen nach Namen vorgeschlagen – bitte prüfen.", { n: r.gesetzt }));
-              })
-            }
-          >
-            <Symbol name="funke" className="size-4" /> {t("Nach Namen vorschlagen")}
-          </button>
+          )}
+          <div className={`flex flex-wrap items-end gap-3 ${weitere.length > 0 ? "border-t border-rand pt-3" : ""}`}>
+            {gewaehlt && (
+              <label className="block w-full text-xs text-text-2 sm:w-72">
+                {t("Standard-Kategorie")}
+                <div className="mt-1">
+                  <KategorieWahl
+                    kategorien={weitereKategorien[gewaehlt.syncId] ?? []}
+                    wert={einstellungen?.actual.standardKategorien?.[gewaehlt.syncId] ?? null}
+                    onWahl={(id) => void standardSetzen(gewaehlt.syncId, id)}
+                  />
+                </div>
+              </label>
+            )}
+            <button
+              className="knopf-zweit"
+              title={t("Ordnet Gruppen ohne Zuordnung die gleich oder ähnlich benannte Kategorie zu. Bestehende Zuordnungen bleiben.")}
+              onClick={() =>
+                void ausfuehren(async () => {
+                  const r = await api.post<{ gesetzt: number }>("/api/gruppen/kategorien-vorschlagen", { budget: gewaehlt?.syncId ?? hauptSync });
+                  setInfo(t("{n} Zuordnung nach Namen vorgeschlagen – bitte prüfen.|{n} Zuordnungen nach Namen vorgeschlagen – bitte prüfen.", { n: r.gesetzt }));
+                })
+              }
+            >
+              <Symbol name="funke" className="size-4" /> {t("Nach Namen zuordnen")}
+            </button>
+          </div>
         </section>
-      ))}
+      )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="space-y-4">
         {haupt.map((h) => {
           const unter = gruppen.filter((u) => u.eltern_id === h.id);
           return (
             <section key={h.id} className="karte p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="color"
-                  className="size-8 cursor-pointer rounded-lg border border-rand bg-transparent"
-                  value={h.farbe}
-                  onChange={(e) => aendern(h.id, { farbe: e.target.value })}
-                />
-                <input
-                  className="min-w-0 flex-1 bg-transparent text-base font-semibold outline-none"
-                  defaultValue={h.name}
-                  onBlur={(e) => e.target.value !== h.name && aendern(h.id, { name: e.target.value })}
-                />
-                <div className="w-full sm:w-56">
-                  {weitere.length > 0 && <div className="text-[10px] text-text-3">{hauptName}</div>}
-                  {kategorien ? (
-                    <KategorieWahl
-                      kategorien={kategorien}
-                      wert={h.actual_kategorie_id}
-                      leer={t("– Actual-Kategorie –")}
-                      onWahl={(id) => aendern(h.id, { actual_kategorie_id: id })}
-                    />
-                  ) : (
-                    <span className="text-xs text-text-3">{t("Actual-Kategorie: –")}</span>
-                  )}
+              <div className="grid items-center gap-2 sm:grid-cols-[auto_minmax(0,1fr)_20rem]">
+                <div className="flex min-w-0 items-center gap-2 sm:contents">
+                  <input
+                    type="color"
+                    className="size-8 cursor-pointer rounded-lg border border-rand bg-transparent"
+                    value={h.farbe}
+                    onChange={(e) => aendern(h.id, { farbe: e.target.value })}
+                  />
+                  <input
+                    className="min-w-0 flex-1 bg-transparent text-base font-semibold outline-none"
+                    defaultValue={h.name}
+                    onBlur={(e) => e.target.value !== h.name && aendern(h.id, { name: e.target.value })}
+                  />
                 </div>
-                {weitere.map(
-                  (b) =>
-                    weitereKategorien[b.syncId] && (
-                      <div key={b.syncId} className="w-full sm:w-56">
-                        <div className="text-[10px] text-text-3">{b.name}</div>
-                        <KategorieWahl
-                          kategorien={weitereKategorien[b.syncId]}
-                          wert={h.weitere_kategorien?.[b.syncId] ?? null}
-                          leer={t("– Standard-Kategorie –")}
-                          onWahl={(id) => void zuordnen(h.id, b.syncId, id)}
-                        />
-                      </div>
-                    ),
+                {liste ? (
+                  <KategorieWahl kategorien={liste} wert={wertVon(h)} leer={gewaehlt ? t("– Standard-Kategorie –") : t("– Actual-Kategorie –")} onWahl={(id) => setzen(h, id)} />
+                ) : (
+                  <span className="text-xs text-text-3">{t("Actual-Kategorie: –")}</span>
                 )}
               </div>
               <div className="mt-3 divide-y divide-rand rounded-xl border border-rand">
                 {unter.map((u) => (
-                  <div key={u.id} className="group flex flex-wrap items-center gap-2 px-2.5 py-1.5 text-sm">
-                    <label className="relative cursor-pointer">
-                      <Farbpunkt farbe={u.farbe} className="size-3.5" />
-                      <input type="color" className="absolute inset-0 opacity-0" value={u.farbe} onChange={(e) => aendern(u.id, { farbe: e.target.value })} />
-                    </label>
-                    <input
-                      className="min-w-0 flex-1 bg-transparent outline-none"
-                      defaultValue={u.name}
-                      onBlur={(e) => e.target.value !== u.name && aendern(u.id, { name: e.target.value })}
-                    />
-                    <span className="text-xs text-text-3">{u.anzahl_positionen || ""}</span>
-                    {kategorien && (
-                      // eigene Actual-Kategorie nur, wenn sie vom Bereich abweichen soll (z. B. Auto/Tanken -> Tanken)
-                      <div className="w-full sm:w-48">
-                        <KategorieWahl
-                          kategorien={kategorien}
-                          wert={u.actual_kategorie_id}
-                          leer={t("wie {name}", { name: h.name })}
-                          onWahl={(id) => aendern(u.id, { actual_kategorie_id: id })}
-                        />
-                      </div>
-                    )}
-                    {weitere.map(
-                      (b) =>
-                        weitereKategorien[b.syncId] && (
-                          <div key={b.syncId} className="w-full sm:w-48" title={b.name}>
-                            <KategorieWahl
-                              kategorien={weitereKategorien[b.syncId]}
-                              wert={u.weitere_kategorien?.[b.syncId] ?? null}
-                              leer={t("wie {name}", { name: h.name })}
-                              onWahl={(id) => void zuordnen(u.id, b.syncId, id)}
-                            />
-                          </div>
-                        ),
-                    )}
-                    {u.anzahl_positionen === 0 && (
-                      <button className="text-text-3 opacity-0 transition hover:text-fehler group-hover:opacity-100" aria-label={t("Untergruppe löschen")} onClick={() => ausfuehren(() => api.delete(`/api/gruppen/${u.id}`))}>
-                        ✕
-                      </button>
-                    )}
+                  <div key={u.id} className="group grid items-center gap-x-2 gap-y-1 px-2.5 py-1.5 text-sm sm:grid-cols-[minmax(0,1fr)_20rem]">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <label className="relative shrink-0 cursor-pointer">
+                        <Farbpunkt farbe={u.farbe} className="size-3.5" />
+                        <input type="color" className="absolute inset-0 opacity-0" value={u.farbe} onChange={(e) => aendern(u.id, { farbe: e.target.value })} />
+                      </label>
+                      <input
+                        className="min-w-0 flex-1 bg-transparent outline-none"
+                        defaultValue={u.name}
+                        onBlur={(e) => e.target.value !== u.name && aendern(u.id, { name: e.target.value })}
+                      />
+                      <span className="text-xs text-text-3">{u.anzahl_positionen || ""}</span>
+                      {u.anzahl_positionen === 0 && (
+                        <button
+                          className="text-text-3 transition hover:text-fehler sm:opacity-0 sm:group-hover:opacity-100"
+                          aria-label={t("Untergruppe löschen")}
+                          onClick={() => ausfuehren(() => api.delete(`/api/gruppen/${u.id}`))}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    {/* eigene Kategorie nur, wenn sie vom Bereich abweichen soll (z. B. Auto/Tanken -> Tanken) */}
+                    {liste && <KategorieWahl kategorien={liste} wert={wertVon(u)} leer={t("wie {name}", { name: h.name })} onWahl={(id) => setzen(u, id)} />}
                   </div>
                 ))}
               </div>
@@ -850,7 +823,9 @@ function Verbindungen() {
           )}
         </div>
         {status && !status.eingerichtet && (
-          <Hinweis>{t("Die Zugangsdaten zu Actual trägt ein Administrator unter Admin-Bereich → Haushalte ein.")}</Hinweis>
+          <Hinweis>
+            {t("Der gewählte Haushalt ist nicht mit Actual verbunden, deshalb gibt es hier keine Budgets zur Auswahl. Ist Actual in einem anderen Haushalt eingerichtet, wechsle oben zu diesem Haushalt und hake weitere Budgets dort an. Sonst trägt ein Administrator die Zugangsdaten unter Admin-Bereich → Haushalte ein.")}
+          </Hinweis>
         )}
         {status?.fehler && <Hinweis art="fehler">{status.fehler}</Hinweis>}
         {budgets && budgets.length > 1 && (
@@ -1143,6 +1118,7 @@ type FinanzEinstellungDaten = {
 /** Welche Budgets, Vermögenskonten und Kategorien das Finanz-Dashboard nutzt */
 function FinanzEinstellungen() {
   const { daten, fehler, neuLaden } = useDaten<FinanzEinstellungDaten>("/api/finanzen/einstellungen");
+  const { daten: actualStatus } = useDaten<{ eingerichtet: boolean }>("/api/actual/status");
   const [entwurf, setEntwurf] = useState<FinanzEinstellungDaten["einstellung"] | null>(null);
   const [status, setStatus] = useState<{ text: string; art: "gut" | "fehler" } | null>(null);
   const [arbeitet, setArbeitet] = useState(false);
@@ -1185,7 +1161,14 @@ function FinanzEinstellungen() {
           <h2 className="font-semibold">{t("Budgets")}</h2>
           <p className="mt-1 text-sm text-text-2">{t("Welche Actual-Budgets im Dashboard „Finanzen“ erscheinen. Gebucht werden Bons weiterhin nur im Budget aus der Konfiguration.")}</p>
         </div>
-        {daten.server.length === 0 && <Hinweis art="warnung">{t("Keine Budgets gefunden – ist Actual erreichbar?")}</Hinweis>}
+        {daten.server.length === 0 &&
+          (actualStatus && !actualStatus.eingerichtet ? (
+            <Hinweis>
+              {t("Der gewählte Haushalt ist nicht mit Actual verbunden. Wechsle oben zum Haushalt mit Actual oder lass die Zugangsdaten unter Admin-Bereich → Haushalte eintragen.")}
+            </Hinweis>
+          ) : (
+            <Hinweis art="warnung">{t("Keine Budgets gefunden – ist Actual erreichbar?")}</Hinweis>
+          ))}
         <div className="space-y-1.5">
           {daten.server.map((b) => (
             <label key={b.syncId} className="flex items-center gap-2 rounded-lg px-1 py-1 text-sm hover:bg-flaeche-2">

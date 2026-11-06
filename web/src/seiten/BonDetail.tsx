@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { api, type AbgleichErgebnis, type Bon, type Gruppe, type Kandidat, type Konto, type Position, type Zahlung } from "../api";
 import { Farbpunkt, Hinweis, KontoOptionen, StatusMarke, useDaten } from "../komponenten/Bausteine";
 import { GruppenWahl } from "../komponenten/GruppenWahl";
+import { PdfAnsicht } from "../komponenten/PdfAnsicht";
 import { SortenWahl, type Sorte } from "../komponenten/SortenWahl";
 import { Symbol } from "../komponenten/Symbol";
 import { centAlsText, centAusText, datum, euro, geld, zahl, zahlungText } from "../format";
@@ -20,7 +21,7 @@ function Vorschau({ bon }: { bon: Bon }) {
   const [gross, setGross] = useState(false);
   const quelle = `/api/bons/${bon.id}/datei?v=${bon.datei_version ?? ""}`;
   if (bon.datei_mime === "application/pdf") {
-    return <iframe src={quelle} title={t("Beleg")} className="h-[75dvh] w-full rounded-xl border border-rand bg-white" />;
+    return <PdfAnsicht quelle={quelle} />;
   }
   return (
     <div className={`overflow-auto rounded-xl border border-rand bg-white ${gross ? "max-h-[80dvh]" : "max-h-[75dvh]"}`}>

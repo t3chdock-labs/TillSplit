@@ -12,7 +12,7 @@
 
 services:
   app:
-    image: t3chdocklabs/tillsplit:0.1.1
+    image: t3chdocklabs/tillsplit:0.1.2
     environment:
       DATABASE_URL: postgres://tillsplit@db:5432/tillsplit
       DATABASE_PASSWORD_FILE: /run/secrets/tillsplit_db_password
@@ -89,8 +89,14 @@ services:
 volumes:
   tillsplit_daten:
   tillsplit_db:
-  # Backups: ideally a separate share (like tillsplit_bons, different path)
+  # Backups: ideally a separate share (like tillsplit_bons, different path) – without driver_opts
+  # the backups stay on the local disk of whichever node runs the app
   tillsplit_backup:
+  #   driver: local
+  #   driver_opts:
+  #     type: nfs
+  #     o: addr=NAS-ADDRESS,rw,nfsvers=4.1
+  #     device: ":/PATH/TO/SHARE/backups"
   # Receipt storage on NFS: <share>/<year>/<month>/<date>_<store>_<total>.jpg|pdf
   tillsplit_bons:
     driver: local

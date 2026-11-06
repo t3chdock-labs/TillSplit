@@ -1,15 +1,23 @@
 import type { FastifyInstance } from "fastify";
+import { actualKonten } from "../actual.js";
 import { zugriff } from "../auth.js";
 import { sql } from "../db.js";
 import { t } from "../i18n.js";
 
-type Filter = { von?: string; bis?: string; haupt?: string; unter?: string; sorte?: string; haendler?: string };
+type Filter = { von?: string; bis?: string; haupt?: string; unter?: string; sorte?: string; haendler?: string; konto?: string };
 
 const datumOk = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+
+/** Actual-Konto eines Bons: gewähltes Konto, bei Barzahlung sonst das Bargeld-Konto aus den Actual-Einstellungen */
+const KONTO_VON_BON = sql`coalesce(b.actual_konto_id, case when b.zahlung = 'bar' then
+  (select e.wert->>'bargeldKonto' from einstellungen e where e.haushalt_id = b.haushalt_id and e.schluessel = 'actual') end)`;
+/** Filterwert für Bons ohne Konto */
+const OHNE_KONTO = "-";
 
 function bedingung(h: number, f: Filter) {
   const von = datumOk(f.von);
   const bis = datumOk(f.bis);
+  const konto = f.konto ? String(f.konto).slice(0, 100) : null;
   return sql`
     haushalt_id = ${h}
     and (${von}::date is null or datum >= ${von}::date)
@@ -17,13 +25,42 @@ function bedingung(h: number, f: Filter) {
     and (${f.haupt ?? null}::text is null or hauptgruppe = ${f.haupt ?? null})
     and (${f.unter ?? null}::text is null or untergruppe = ${f.unter ?? null})
     and (${f.sorte ?? null}::text is null or sorte = ${f.sorte ?? null})
-    and (${f.haendler ?? null}::text is null or haendler = ${f.haendler ?? null})`;
+    and (${f.haendler ?? null}::text is null or haendler = ${f.haendler ?? null})
+    and (${konto}::text is null or bon_id in (
+      select b.id from bons b where b.haushalt_id = ${h}
+         and ${konto === OHNE_KONTO ? sql`${KONTO_VON_BON} is null` : sql`${KONTO_VON_BON} = ${konto}`}))`;
 }
 
 const raster = ["day", "week", "month", "year"] as const;
 const rasterAus: Record<string, (typeof raster)[number]> = { tag: "day", woche: "week", monat: "month", jahr: "year" };
 
 export async function auswertungRouten(app: FastifyInstance) {
+  // Actual-Konten, denen Bons zugeordnet sind – für den Kontofilter der Übersicht
+  app.get("/api/auswertung/konten", async (req) => {
+    const h = zugriff(req, "bons_sehen");
+    const zeilen = await sql<{ id: string | null; bons: number }[]>`
+      select ${KONTO_VON_BON} as id, count(*)::int as bons
+        from bons b where b.haushalt_id = ${h} and b.datum is not null
+       group by 1 order by 2 desc`;
+    // Namen aus dem Finanz-Zwischenspeicher, fehlende direkt aus Actual (falls erreichbar)
+    const namen = new Map(
+      (
+        await sql<{ id: string; name: string; budget_name: string }[]>`
+          select k.id, k.name, coalesce(fb.name, k.budget) as budget_name
+            from fin_konten k left join fin_budgets fb on fb.haushalt_id = k.haushalt_id and fb.sync_id = k.budget
+           where k.haushalt_id = ${h}`
+      ).map((k) => [k.id, k]),
+    );
+    if (zeilen.some((z) => z.id && !namen.has(z.id)))
+      for (const k of await actualKonten(h).catch(() => [])) if (!namen.has(k.id)) namen.set(k.id, k);
+    return zeilen.map((z) => ({
+      id: z.id ?? OHNE_KONTO,
+      name: z.id ? (namen.get(z.id)?.name ?? t("Unbekanntes Konto")) : t("Ohne Konto"),
+      budget_name: z.id ? (namen.get(z.id)?.budget_name ?? null) : null,
+      bons: z.bons,
+    }));
+  });
+
   app.get<{ Querystring: Filter & { raster?: string } }>("/api/auswertung", async (req) => {
     const h = zugriff(req, "bons_sehen");
     const f = req.query;

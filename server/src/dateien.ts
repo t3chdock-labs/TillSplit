@@ -88,6 +88,25 @@ export async function pdfZuBildern(puffer: Buffer, dpi = 170): Promise<Buffer[]>
   });
 }
 
+/** Kleines Vorschaubild für die Bon-Liste: bei PDFs die erste Seite, bei Fotos verkleinert. */
+export async function vorschauBild(puffer: Buffer, mime: string, breite = 160): Promise<Buffer> {
+  const quelle =
+    mime === "application/pdf"
+      ? await mitTempVerzeichnis(async (dir) => {
+          const ein = path.join(dir, "bon.pdf");
+          await fs.writeFile(ein, puffer);
+          // doppelte Breite für scharfe Darstellung auf hochauflösenden Bildschirmen
+          await ausfuehren("pdftoppm", ["-f", "1", "-l", "1", "-scale-to-x", String(breite * 2), "-scale-to-y", "-1", "-png", "-singlefile", ein, path.join(dir, "seite")]);
+          return fs.readFile(path.join(dir, "seite.png"));
+        })
+      : puffer;
+  return sharp(quelle, { failOn: "none" })
+    .resize({ width: breite * 2, withoutEnlargement: true })
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: 80, mozjpeg: true })
+    .toBuffer();
+}
+
 /**
  * Bild für die KI vorbereiten. Kassenbons sind lang und schmal – würde man sie
  * als Ganzes verkleinern, wäre die Schrift unlesbar. Deshalb wird auf eine

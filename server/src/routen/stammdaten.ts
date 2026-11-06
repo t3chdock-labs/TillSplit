@@ -5,7 +5,7 @@ import { sorteSaeubern } from "../verarbeitung.js";
 import { httpFehler, nurAdmin, protokollieren, zugriff } from "../auth.js";
 import { config } from "../config.js";
 import { ablageCacheLeeren, ablageVon, BAUSTEINE, haushaltNeuAblegen, pfadAusVorlage, VORLAGE_STANDARD, vorlagePruefen } from "../dateien.js";
-import { einstellungSchreiben, sql } from "../db.js";
+import { einstellungLesen, einstellungSchreiben, sql } from "../db.js";
 import { SPRACH_NAMEN, SPRACHEN, standardSprache, standardSpracheSetzen, t, type Sprache } from "../i18n.js";
 import { kiEinstellung, monatsKosten, waehrungMitKurs, type KiEinstellung } from "../ki/index.js";
 import { gruppenVorschlagAnwenden, gruppenVorschlagen, type GruppenVorschlag } from "../ki/gruppen.js";
@@ -20,6 +20,48 @@ type GruppeEingabe = {
   sortierung?: number;
   actual_kategorie_id?: string | null;
 };
+
+/**
+ * Ordnet Warengruppen ohne Zuordnung die gleichnamige Actual-Kategorie eines Buchungs-Budgets zu.
+ * Haupt-Budget: Bereich nach eigenem Namen, Untergruppe nur bei exakt gleichem Namen (sonst erbt sie).
+ * Weiteres Budget: zuerst wie die Kategorie im Haupt-Budget heißt, sonst nach dem Gruppennamen.
+ * nurGleich = nur exakt gleiche Namen (für die automatische Zuordnung), sonst auch „enthält“.
+ */
+async function kategorienNachNamen(h: number, budget: string, nurGleich: boolean): Promise<number> {
+  const budgets = await buchungsBudgets(h);
+  if (!budgets.includes(budget)) throw httpFehler(400, "Unbekanntes Budget");
+  const istHaupt = budget === budgets[0];
+  const haupt = await actualKategorien(h);
+  const ziel = istHaupt ? haupt : await actualKategorien(h, budget);
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9äöüß]/g, "");
+  const finde = (name: string | undefined, genau = nurGleich) => {
+    if (!name) return null;
+    const n = norm(name);
+    // exakt gleicher Name, sonst enthält der eine den anderen (z. B. „Drogerie“ / „Drogerie & Apotheke“)
+    return ziel.find((k) => norm(k.name) === n) ?? (genau ? null : ziel.find((k) => n.length > 3 && (norm(k.name).includes(n) || n.includes(norm(k.name))))) ?? null;
+  };
+  const gruppen = await sql<{ id: number; name: string; eltern_id: number | null; actual_kategorie_id: string | null; vorhanden: boolean }[]>`
+    select g.id, g.name, g.eltern_id, g.actual_kategorie_id,
+           exists (select 1 from gruppen_kategorien k where k.gruppe_id = g.id and k.sync_id = ${budget}) as vorhanden
+      from gruppen g where g.haushalt_id = ${h}`;
+  let gesetzt = 0;
+  for (const g of gruppen) {
+    const unter = g.eltern_id != null;
+    if (istHaupt) {
+      if (g.actual_kategorie_id) continue;
+      const treffer = finde(g.name, unter || nurGleich);
+      if (!treffer) continue;
+      await sql`update gruppen set actual_kategorie_id = ${treffer.id} where id = ${g.id} and actual_kategorie_id is null`;
+    } else {
+      if (g.vorhanden) continue;
+      const treffer = g.actual_kategorie_id ? (finde(haupt.find((k) => k.id === g.actual_kategorie_id)?.name) ?? finde(g.name, true)) : finde(g.name, unter || nurGleich);
+      if (!treffer) continue;
+      await sql`insert into gruppen_kategorien (gruppe_id, sync_id, kategorie_id) values (${g.id}, ${budget}, ${treffer.id}) on conflict do nothing`;
+    }
+    gesetzt++;
+  }
+  return gesetzt;
+}
 
 // Haushalte, deren Bons gerade neu abgelegt bzw. ver-/entschlüsselt werden
 const neuAblegenLaeuft = new Set<number>();
@@ -108,31 +150,7 @@ export async function stammdatenRouten(app: FastifyInstance) {
   app.post<{ Body: { budget: string } }>("/api/gruppen/kategorien-vorschlagen", async (req) => {
     const h = zugriff(req, "verwalten");
     const budget = String(req.body?.budget ?? "");
-    if (!(await buchungsBudgets(h)).slice(1).includes(budget)) throw httpFehler(400, "Unbekanntes Budget");
-    const haupt = await actualKategorien(h);
-    const ziel = await actualKategorien(h, budget);
-    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9äöüß]/g, "");
-    const finde = (name: string | undefined) => {
-      if (!name) return null;
-      const n = norm(name);
-      // exakt gleicher Name, sonst enthält der eine den anderen (z. B. „Drogerie“ / „Drogerie & Apotheke“)
-      return ziel.find((k) => norm(k.name) === n) ?? ziel.find((k) => n.length > 3 && (norm(k.name).includes(n) || n.includes(norm(k.name)))) ?? null;
-    };
-    const gruppen = await sql<{ id: number; name: string; eltern_id: number | null; actual_kategorie_id: string | null; vorhanden: boolean }[]>`
-      select g.id, g.name, g.eltern_id, g.actual_kategorie_id,
-             exists (select 1 from gruppen_kategorien k where k.gruppe_id = g.id and k.sync_id = ${budget}) as vorhanden
-        from gruppen g where g.haushalt_id = ${h}`;
-    let gesetzt = 0;
-    for (const g of gruppen) {
-      if (g.vorhanden) continue;
-      // Untergruppen ohne eigene Kategorie im Haupt-Budget erben die des Bereichs – dann auch hier nichts setzen
-      if (g.eltern_id != null && !g.actual_kategorie_id) continue;
-      const treffer = finde(haupt.find((k) => k.id === g.actual_kategorie_id)?.name) ?? (g.eltern_id == null ? finde(g.name) : null);
-      if (!treffer) continue;
-      await sql`insert into gruppen_kategorien (gruppe_id, sync_id, kategorie_id) values (${g.id}, ${budget}, ${treffer.id}) on conflict do nothing`;
-      gesetzt++;
-    }
-    return { gesetzt };
+    return { gesetzt: await kategorienNachNamen(h, budget, false) };
   });
 
   app.delete<{ Params: { id: string } }>("/api/gruppen/:id", async (req, antwort) => {
@@ -310,6 +328,7 @@ export async function stammdatenRouten(app: FastifyInstance) {
       const h = zugriff(req, "verwalten");
       const a = req.body.actual;
       const text = (w: unknown) => (typeof w === "string" && w ? w.slice(0, 100) : null);
+      const vorher = await einstellungLesen<ActualEinstellung | null>("actual", null, h);
       await einstellungSchreiben(
         "actual",
         {
@@ -328,6 +347,10 @@ export async function stammdatenRouten(app: FastifyInstance) {
         } satisfies ActualEinstellung,
         h,
       );
+      // gleichnamige Kategorien sofort zuordnen: im Haupt-Budget beim ersten Speichern, sonst für neu gewählte Budgets
+      const budgets = await buchungsBudgets(h);
+      const neu = budgets.filter((b, i) => (i === 0 ? vorher == null : !(vorher?.weitereBudgets ?? []).includes(b)));
+      for (const b of neu) await kategorienNachNamen(h, b, true).catch(() => 0);
     }
     return { ok: true };
   });

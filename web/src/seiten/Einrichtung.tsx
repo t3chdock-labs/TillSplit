@@ -16,6 +16,7 @@ type Schritt = {
   nurAdmin: boolean;
   vonHand: boolean;
   hinweis?: string;
+  unterpunkte?: { titel: string; ziel: string; erledigt: boolean }[];
 };
 type EinrichtungDaten = { schritte: Schritt[]; ausgeblendet: boolean; pflichtOffen: number };
 
@@ -151,6 +152,23 @@ export function Einrichtung() {
                 </div>
                 <p className="text-sm text-text-2">{s.text}</p>
                 {s.hinweis && <p className={`text-xs ${s.erledigt ? "text-text-3" : "text-warnung"}`}>{s.hinweis}</p>}
+                {s.unterpunkte ? (
+                  <ol className="space-y-1 pt-1">
+                    {s.unterpunkte.map((u, j) => (
+                      <li key={u.ziel}>
+                        <Link to={u.ziel} className="group flex items-center gap-2 rounded-lg px-1 py-1 text-sm hover:bg-flaeche-2">
+                          <span
+                            className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${u.erledigt ? "bg-emerald-500/15 text-gut" : "bg-flaeche-2 text-text-2"}`}
+                          >
+                            {u.erledigt ? <Symbol name="haken" className="size-3" /> : j + 1}
+                          </span>
+                          <span className={`flex-1 ${u.erledigt ? "text-text-2" : ""}`}>{u.titel}</span>
+                          <Symbol name="weiter" className="size-4 text-text-3 group-hover:text-akzent" />
+                        </Link>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button className={aktuell ? "knopf-haupt text-sm" : "knopf-zweit text-sm"} onClick={() => oeffnen(s)}>
                     {s.id === "bon" ? <Symbol name="kamera" className="size-4" /> : null}
@@ -164,6 +182,7 @@ export function Einrichtung() {
                     </label>
                   )}
                 </div>
+                )}
               </div>
             </li>
           );

@@ -20,7 +20,7 @@ import { bonsHochgeladen } from "../benachrichtigungen.js";
 import { gegenpruefungAktualisieren } from "../gegenpruefung.js";
 import { sql } from "../db.js";
 import { t } from "../i18n.js";
-import { ablageVon, absoluterPfad, bonAblegen, dateiartErkennen, dateiLesen, dateiSchreiben, fuerAblageAufbereiten, mimeVon, sha256 } from "../dateien.js";
+import { ablageVon, absoluterPfad, bonAblegen, dateiartErkennen, dateiLesen, dateiSchreiben, fuerAblageAufbereiten, mimeVon, sha256, vorschauBild } from "../dateien.js";
 import { bonKosten, kiEinstellung, kostenPruefen, waehrungMitKurs } from "../ki/index.js";
 import { CLAUDE_MODELLE, kostenSchaetzen } from "../ki/kosten.js";
 import { regelLernen } from "../regeln.js";
@@ -91,6 +91,9 @@ const idVon = (wert: string) => {
   if (!Number.isInteger(id) || id <= 0) throw httpFehler(400, "Ungültige ID");
   return id;
 };
+
+/** Vorschaubilder nach Datei-Prüfsumme, nur im Arbeitsspeicher (älteste fliegen zuerst raus) */
+const vorschauSpeicher = new Map<string, Buffer>();
 
 export async function bonRouten(app: FastifyInstance) {
   // Felder "zahlung" (bar|karte) und "konto" (Actual-Konto) müssen vor den Dateien kommen
@@ -237,6 +240,27 @@ export async function bonRouten(app: FastifyInstance) {
     );
     antwort.header("content-disposition", `inline; filename="${path.basename(bon.datei_pfad).replace(/\.enc$/, "").replace(/[^\w.,-]/g, "_")}"`);
     return antwort.send(await dateiLesen(absoluterPfad(bon.datei_pfad, await ablageVon(h))));
+  });
+
+  // Vorschaubild für die Liste – zwischengespeichert über den Inhalt, damit nicht jedes Mal neu gerendert wird
+  app.get<{ Params: { id: string }; Querystring: { v?: string } }>("/api/bons/:id/vorschau", async (req, antwort) => {
+    const id = idVon(req.params.id);
+    const h = await bonSichtbar(req, id);
+    const [bon] = await sql<{ datei_pfad: string; datei_mime: string; datei_sha256: string }[]>`
+      select datei_pfad, datei_mime, datei_sha256 from bons where id = ${id}`;
+    const etag = `"v-${bon.datei_sha256}"`;
+    antwort.header("etag", etag);
+    antwort.header("cache-control", req.query.v && bon.datei_sha256.startsWith(req.query.v) ? "private, max-age=31536000, immutable" : "private, no-cache");
+    if (req.headers["if-none-match"] === etag) return antwort.code(304).send();
+    let bild = vorschauSpeicher.get(bon.datei_sha256);
+    if (!bild) {
+      bild = await vorschauBild(await dateiLesen(absoluterPfad(bon.datei_pfad, await ablageVon(h))), bon.datei_mime);
+      vorschauSpeicher.set(bon.datei_sha256, bild);
+      if (vorschauSpeicher.size > 500) vorschauSpeicher.delete(vorschauSpeicher.keys().next().value!);
+    }
+    antwort.header("content-type", "image/jpeg");
+    antwort.header("x-content-type-options", "nosniff");
+    return antwort.send(bild);
   });
 
   // Prüfen & Speichern: Kopfdaten und Positionen übernehmen, Korrekturen lernen

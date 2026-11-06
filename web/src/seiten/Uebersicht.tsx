@@ -57,6 +57,8 @@ export function mitUebrigen<T extends Summe>(liste: T[], n: number): Summe[] {
   return [...liste.slice(0, n), { name: UEBRIGE, farbe: grau, summe_cent: rest }];
 }
 
+const KONTO_SPEICHER = "tillsplit:uebersicht-konto";
+
 export const vergleichText: Partial<Record<Ansicht, string>> = { woche: t("zur Vorwoche"), monat: t("zum Vormonat"), jahr: t("zum Vorjahr") };
 
 export function Kennzahl({ titel, wert, unter, trend, trendGut = "runter" }: { titel: string; wert: string; unter?: string; trend?: number | null; trendGut?: "rauf" | "runter" }) {
@@ -103,13 +105,41 @@ export function Uebersicht() {
   const { auswaehlen } = useHochladen();
   // Detailliste: die einzelnen Posten hinter einem Balken/Eintrag, mit Link auf den Bon
   const [detail, setDetail] = useState<{ titel: string; filter: Record<string, string> } | null>(null);
+  // Filter auf ein Actual-Konto (nur Bons, die diesem Konto zugeordnet sind); die Wahl merkt sich das Gerät
+  const { daten: konten, fehler: kontenFehler } = useDaten<{ id: string; name: string; budget_name: string | null; bons: number }[]>("/api/auswertung/konten");
+  const [kontoWahl, setKontoWahl] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(KONTO_SPEICHER);
+    } catch {
+      return null;
+    }
+  });
+  // gespeichertes Konto, das es nicht (mehr) gibt, ignorieren
+  const konto = konten && kontoWahl && konten.some((k) => k.id === kontoWahl) ? kontoWahl : null;
+  const kontoSetzen = (id: string | null) => {
+    setKontoWahl(id);
+    try {
+      if (id) localStorage.setItem(KONTO_SPEICHER, id);
+      else localStorage.removeItem(KONTO_SPEICHER);
+    } catch {
+      /* privates Fenster */
+    }
+  };
+  const mehrereBudgets = new Set(konten?.map((k) => k.budget_name).filter(Boolean)).size > 1;
 
   const bereich = useMemo(() => bereichVon(ansicht, anker, frei), [ansicht, anker, frei]);
   const postenZeigen = (titel: string, filter: Record<string, string>) =>
     setDetail({
       titel,
-      // aktueller Zeitraum und gewählter Bereich/Gruppe gelten mit
-      filter: { ...(bereich.von ? { von: bereich.von } : {}), ...(bereich.bis ? { bis: bereich.bis } : {}), ...(haupt ? { haupt } : {}), ...(unter ? { unter } : {}), ...filter },
+      // aktueller Zeitraum, gewählter Bereich/Gruppe und Konto gelten mit
+      filter: {
+        ...(bereich.von ? { von: bereich.von } : {}),
+        ...(bereich.bis ? { bis: bereich.bis } : {}),
+        ...(haupt ? { haupt } : {}),
+        ...(unter ? { unter } : {}),
+        ...(konto ? { konto } : {}),
+        ...filter,
+      },
     });
   const raster = rasterWahl ?? autoRaster(ansicht, bereich);
   const ansichtWechseln = (neu: Ansicht, neuerAnker = anker) => {
@@ -124,9 +154,12 @@ export function Uebersicht() {
     if (bereich.bis) p.set("bis", bereich.bis);
     if (haupt) p.set("haupt", haupt);
     if (unter) p.set("unter", unter);
+    if (konto) p.set("konto", konto);
     return `/api/auswertung?${p}`;
-  }, [bereich, raster, haupt, unter]);
-  const { daten, fehler } = useDaten<Auswertung>(pfad);
+  }, [bereich, raster, haupt, unter, konto]);
+  // erst laden, wenn feststeht, ob ein gemerktes Konto noch gilt (sonst zweimal laden)
+  const bereit = konten != null || kontenFehler != null || kontoWahl == null;
+  const { daten, fehler } = useDaten<Auswertung>(bereit ? pfad : null);
   const f = themaFarben();
 
   // Aktuelle Ebene: Bereiche -> Gruppen -> Sorten
@@ -286,6 +319,25 @@ export function Uebersicht() {
               </>
             )}
           </>
+        )}
+        {konten && konten.length > 1 && (
+          <label className="flex w-full items-center gap-2 text-sm sm:ml-auto sm:w-auto">
+            <Symbol name="finanzen" className="size-4 shrink-0 text-text-3" />
+            <select
+              className={`eingabe py-1.5 sm:w-64 ${konto ? "border-akzent text-akzent" : ""}`}
+              value={konto ?? ""}
+              onChange={(e) => kontoSetzen(e.target.value || null)}
+              aria-label={t("Nach Actual-Konto filtern")}
+            >
+              <option value="">{t("Alle Konten")}</option>
+              {konten.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.name}
+                  {mehrereBudgets && k.budget_name ? ` · ${k.budget_name}` : ""} ({t("{n} Bon|{n} Bons", { n: k.bons })})
+                </option>
+              ))}
+            </select>
+          </label>
         )}
       </div>
 

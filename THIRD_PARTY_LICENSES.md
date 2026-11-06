@@ -46,6 +46,8 @@ TillSplit nutzt die folgenden Bibliotheken und Programme. Ihre Lizenztexte liege
 | @jlongster/sql.js | 1.6.7 | MIT | Server | http://github.com/sql-js/sql.js |
 | @levischuck/tiny-cbor | 0.2.11 | MIT | Server | https://github.com/levischuck/tiny-cbor |
 | @lukeed/ms | 2.0.2 | MIT | Server | lukeed/ms |
+| @napi-rs/canvas | 1.1.0 | MIT | Oberfläche | https://github.com/Brooooooklyn/canvas |
+| @napi-rs/canvas-win32-x64-msvc | 1.1.0 | MIT | Oberfläche | https://github.com/Brooooooklyn/canvas |
 | @opentelemetry/api | 1.10.0 | Apache-2.0 | Server | open-telemetry/opentelemetry-js |
 | @peculiar/asn1-android | 2.11.1 | MIT | Server | https://github.com/PeculiarVentures/asn1-schema |
 | @peculiar/asn1-asym-key | 2.11.1 | MIT | Server | https://github.com/PeculiarVentures/asn1-schema |
@@ -149,6 +151,7 @@ TillSplit nutzt die folgenden Bibliotheken und Programme. Ihre Lizenztexte liege
 | p-try | 2.2.0 | MIT | Server | sindresorhus/p-try |
 | path-exists | 4.0.0 | MIT | Server | sindresorhus/path-exists |
 | path-scurry | 2.0.2 | BlueOak-1.0.0 | Server | https://github.com/isaacs/path-scurry |
+| pdfjs-dist | 6.5.438 | Apache-2.0 | Oberfläche | https://github.com/mozilla/pdf.js |
 | pino | 10.4.0 | MIT | Server | https://github.com/pinojs/pino |
 | pino-abstract-transport | 3.0.0 | MIT | Server | https://github.com/pinojs/pino-abstract-transport |
 | pino-std-serializers | 7.1.0 | MIT | Server | ssh://git@github.com/pinojs/pino-std-serializers |
