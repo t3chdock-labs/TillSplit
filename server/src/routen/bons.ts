@@ -11,7 +11,12 @@ import {
   buchungsBudgets,
   kandidatenSuchen,
   barBuchen,
+  buchungsBons,
   neuAufteilen,
+  sammelAufloesen,
+  sammelKandidatenSuchen,
+  sammelVorschlaege,
+  sammelVorschlagBuchen,
   type AbgleichErgebnis,
 } from "../actual.js";
 import { httpFehler, zugriff } from "../auth.js";
@@ -152,7 +157,7 @@ export async function bonRouten(app: FastifyInstance) {
     const zeilen = await sql`
       select b.id, b.status, b.fehler, to_char(b.datum, 'YYYY-MM-DD') as datum, b.uhrzeit, b.summe_cent,
              b.datei_mime, left(b.datei_sha256, 16) as datei_version, b.gegenpruefung, b.erstellt_am, h.name as haendler, b.zahlung, b.karte_endziffern, b.abgleich_hinweis,
-             u.name as hochgeladen_von, b.dublette_von,
+             u.name as hochgeladen_von, b.dublette_von, b.sammel,
              count(p.id)::int as anzahl_positionen,
              count(p.id) filter (where p.gruppe_id is null)::int as ohne_gruppe,
              count(p.id) filter (where p.unsicher)::int as unsicher,
@@ -187,9 +192,16 @@ export async function bonRouten(app: FastifyInstance) {
              b.zahlung, b.zahlung_quelle, b.karte_endziffern, b.actual_konto_id, b.konto_quelle,
              b.abgleich_hinweis, b.abgleich_am, u.name as hochgeladen_von,
              b.ki_eingabe_tokens, b.ki_ausgabe_tokens, b.ki_cache_tokens, b.ki_kosten_usd::float as ki_kosten_usd, b.ki_sekunden::float as ki_sekunden,
-             b.ki_summe_passt, b.dublette_von
+             b.ki_summe_passt, b.dublette_von, b.sammel
         from bons b left join haendler h on h.id = b.haendler_id left join benutzer u on u.id = b.hochgeladen_von
        where b.id = ${id} and b.haushalt_id = ${h}`;
+    // Sammelbuchung: die anderen Bons derselben Abbuchung
+    const sammel_bons = bon?.sammel
+      ? await sql`
+          select b.id, to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, h.name as haendler
+            from bons b left join haendler h on h.id = b.haendler_id
+           where b.haushalt_id = ${h} and b.sammel and b.actual_tx_id = ${bon.actual_tx_id} order by b.datum, b.id`
+      : [];
     const positionen = await sql`
       select id, nr, text_roh, name, sorte, menge, einheit, einzelpreis_cent, betrag_cent, gruppe_id, gruppe_quelle, unsicher
         from positionen where bon_id = ${id} order by nr`;
@@ -216,7 +228,7 @@ export async function bonRouten(app: FastifyInstance) {
       ...bon,
       fehler: bon.fehler && t(bon.fehler),
       abgleich_hinweis: bon.abgleich_hinweis && t(bon.abgleich_hinweis),
-      ki_kosten: await bonKosten(id, waehrung), positionen, naechster_offen: nachbarn.naechster_offen, nachlesen };
+      ki_kosten: await bonKosten(id, waehrung), positionen, sammel_bons, naechster_offen: nachbarn.naechster_offen, nachlesen };
   });
 
   app.get<{ Params: { id: string }; Querystring: { v?: string } }>("/api/bons/:id/datei", async (req, antwort) => {
@@ -420,16 +432,23 @@ export async function bonRouten(app: FastifyInstance) {
     const id = idVon(req.params.id);
     const h = zugriff(req);
     const darfAlle = req.nutzer!.rechte!.bons_bearbeiten;
-    const [vorhanden] = await sql<{ actual_tx_id: string | null }[]>`
-      select actual_tx_id from bons where id = ${id} and haushalt_id = ${h}
+    const [vorhanden] = await sql<{ actual_tx_id: string | null; sammel: boolean }[]>`
+      select actual_tx_id, sammel from bons where id = ${id} and haushalt_id = ${h}
          and (${darfAlle} or (hochgeladen_von = ${req.nutzer!.id} and status <> 'gebucht'))`;
     if (!vorhanden) throw httpFehler(404, "Bon nicht gefunden");
     let actual: string | null = null;
     if (vorhanden.actual_tx_id && req.query.actual !== "behalten") {
       // erst Actual zurücknehmen; schlägt das fehl, bleibt der Bon erhalten
-      actual = await actualZuruecknehmen(h, id).catch((e: Error) => {
+      const fehlschlag = (e: Error) => {
         throw httpFehler(502, t("Actual: {meldung} – Bon wurde nicht gelöscht", { meldung: e.message }));
-      });
+      };
+      if (vorhanden.sammel) {
+        // Sammelbuchung: Aufteilung zurücknehmen, die übrigen Bons wieder zum Zuordnen öffnen
+        await sammelAufloesen(h, id, t("Sammelbuchung aufgelöst, weil Bon {nr} gelöscht wurde – bitte neu zuordnen.", { nr: id })).catch(fehlschlag);
+        actual = t("Sammelbuchung in Actual aufgelöst");
+      } else {
+        actual = await actualZuruecknehmen(h, id).catch(fehlschlag);
+      }
     }
     const [bon] = await sql<{ datei_pfad: string }[]>`delete from bons where id = ${id} and haushalt_id = ${h} returning datei_pfad`;
     if (bon) await fsp.rm(absoluterPfad(bon.datei_pfad, await ablageVon(h)), { force: true });
@@ -457,4 +476,48 @@ export async function bonRouten(app: FastifyInstance) {
       return { ok: true };
     },
   );
+
+  // Sammelbuchung: mehrere Bons, eine Abbuchung (z. B. mehrere Amazon-Rechnungen)
+  const bonListe = (wert: unknown) => {
+    const ids = (Array.isArray(wert) ? wert : String(wert ?? "").split(",")).map((x) => Number(x));
+    if (!ids.length || ids.some((x) => !Number.isInteger(x) || x <= 0)) throw httpFehler(400, "Ungültige ID");
+    return ids;
+  };
+  const sammelFehler = (e: Error) => {
+    throw httpFehler(400, e.message);
+  };
+  app.get<{ Querystring: { bons?: string } }>("/api/sammelbuchung/kandidaten", async (req) => {
+    const h = zugriff(req, "bons_bearbeiten");
+    return sammelKandidatenSuchen(h, bonListe(req.query.bons)).catch(sammelFehler);
+  });
+  app.post<{ Body: { bonIds?: number[]; transaktionId?: string; budget?: string } }>("/api/sammelbuchung", async (req) => {
+    const h = zugriff(req, "bons_bearbeiten");
+    const ids = bonListe(req.body?.bonIds);
+    if (!req.body?.transaktionId) throw httpFehler(400, "transaktionId angeben");
+    // Kandidaten neu prüfen: nur eine Abbuchung, die genau der Summe entspricht und noch frei ist
+    const { kandidaten } = await sammelKandidatenSuchen(h, ids).catch(sammelFehler);
+    const wahl = kandidaten.find((k) => k.id === req.body.transaktionId && (!req.body.budget || k.budget === req.body.budget));
+    if (!wahl) throw httpFehler(400, t("Die Abbuchung passt nicht (mehr) zur Summe der Bons"));
+    if (wahl.aufgeteilt) throw httpFehler(400, t("Die Buchung ist in Actual bereits aufgeteilt – dort zuerst die Aufteilung aufheben"));
+    await aufBuchungVerteilen(h, ids, wahl.id, wahl.budget);
+    return { ok: true };
+  });
+  app.get("/api/sammelbuchung/vorschlaege", async (req) => sammelVorschlaege(zugriff(req, "bons_bearbeiten")));
+  app.post<{ Params: { id: string } }>("/api/sammelbuchung/vorschlaege/:id/buchen", async (req) => {
+    const h = zugriff(req, "bons_bearbeiten");
+    await sammelVorschlagBuchen(h, idVon(req.params.id)).catch(sammelFehler);
+    return { ok: true };
+  });
+  app.post<{ Params: { id: string } }>("/api/sammelbuchung/vorschlaege/:id/verwerfen", async (req) => {
+    const h = zugriff(req, "bons_bearbeiten");
+    await sql`update sammel_vorschlaege set verworfen = true where id = ${idVon(req.params.id)} and haushalt_id = ${h}`;
+    return { ok: true };
+  });
+  app.post<{ Params: { id: string } }>("/api/bons/:id/sammel-aufloesen", async (req) => {
+    const id = idVon(req.params.id);
+    const h = await bonBearbeitbar(req, id);
+    if ((await buchungsBons(h, id)).length < 2) throw httpFehler(400, t("Der Bon gehört zu keiner Sammelbuchung"));
+    await sammelAufloesen(h, id);
+    return { ok: true };
+  });
 }

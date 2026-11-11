@@ -251,31 +251,55 @@ export async function kandidatenSuchen(haushaltId: number, bonId: number) {
     select to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, h.name as haendler, b.actual_konto_id as konto
       from bons b left join haendler h on h.id = b.haendler_id where b.id = ${bonId} and b.haushalt_id = ${haushaltId}`;
   if (!bon?.datum || bon.summe_cent == null) return [];
-  // Buchungen, die schon zu einem anderen Bon gehören, nicht noch einmal anbieten
-  const vergeben = new Set(
-    (await sql<{ actual_tx_id: string }[]>`
-      select actual_tx_id from bons where haushalt_id = ${haushaltId} and actual_tx_id is not null and id <> ${bonId}`).map((z) => z.actual_tx_id),
-  );
+  const treffer = await abbuchungenSuchen(haushaltId, {
+    passt: (cent) => cent === bon.summe_cent,
+    von: tagVerschieben(bon.datum, -4),
+    bis: tagVerschieben(bon.datum, 10),
+    bezug: bon.datum,
+    haendler: bon.haendler ? [bon.haendler] : [],
+    konto: bon.konto,
+    ausser: [bonId],
+  });
+  return treffer.sort((a, b) => a.punkte - b.punkte).slice(0, 8);
+}
 
-  const treffer: {
-    id: string; konto_id: string; konto: string; budget: string; datum: string; betrag_cent: number;
-    empfaenger: string; notiz: string | null; aufgeteilt: boolean; abstand_tage: number; name_passt: boolean; punkte: number;
-  }[] = [];
+export type Kandidat = {
+  id: string; konto_id: string; konto: string; budget: string; datum: string; betrag_cent: number;
+  empfaenger: string; notiz: string | null; aufgeteilt: boolean; abstand_tage: number; name_passt: boolean; punkte: number;
+};
+
+/**
+ * Abbuchungen in Actual suchen, deren Betrag passt – Grundlage für Einzel- und Sammelbuchung.
+ * Buchungen, die schon zu anderen Bons gehören (außer den Bons in „ausser“), werden nicht angeboten.
+ */
+async function abbuchungenSuchen(
+  haushaltId: number,
+  suche: { passt: (cent: number) => boolean; von: string; bis: string; bezug: string; haendler: string[]; konto: string | null; ausser: number[] },
+): Promise<Kandidat[]> {
+  const vergeben = new Set(
+    (await sql<{ id: number; actual_tx_id: string }[]>`
+      select id, actual_tx_id from bons where haushalt_id = ${haushaltId} and actual_tx_id is not null`)
+      .filter((z) => !suche.ausser.includes(z.id))
+      .map((z) => z.actual_tx_id),
+  );
+  // erstes Wort des Geschäfts („Amazon“, „Rewe“) im Empfänger der Abbuchung
+  const namen = suche.haendler.map((h) => h.toLowerCase().split(" ")[0]).filter((n) => n.length > 1);
+
+  const treffer: Kandidat[] = [];
   // Ist ein Konto festgelegt (von Hand oder über die Karte), nur in dessen Budget suchen, sonst in allen Buchungs-Budgets
-  const budgets = bon.konto ? [await kontoBudget(haushaltId, bon.konto)] : await buchungsBudgets(haushaltId);
+  const budgets = suche.konto ? [await kontoBudget(haushaltId, suche.konto)] : await buchungsBudgets(haushaltId);
   for (const [nr, budget] of budgets.entries()) {
    await mitActual(haushaltId, async () => {
     const payees = new Map((await api.getPayees()).map((p) => [p.id, p.name]));
-    const haendler = (bon.haendler ?? "").toLowerCase();
     const konten = await suchKonten(haushaltId);
-    const durchsuchen = bon.konto ? (await api.getAccounts()).filter((k) => k.id === bon.konto) : konten;
+    const durchsuchen = suche.konto ? (await api.getAccounts()).filter((k) => k.id === suche.konto) : konten;
     for (const konto of durchsuchen) {
-      const liste: Transaktion[] = await api.getTransactions(konto.id, tagVerschieben(bon.datum!, -4), tagVerschieben(bon.datum!, 10));
+      const liste: Transaktion[] = await api.getTransactions(konto.id, suche.von, suche.bis);
       for (const t of liste) {
-        if (t.is_child || t.amount !== -bon.summe_cent! || vergeben.has(t.id)) continue;
+        if (t.is_child || !suche.passt(-t.amount) || vergeben.has(t.id)) continue;
         const empfaenger = (t.payee && payees.get(t.payee)) || t.imported_payee || "";
-        const abstand = tageZwischen(t.date, bon.datum!);
-        const namePasst = haendler.length > 1 && empfaenger.toLowerCase().includes(haendler.split(" ")[0]);
+        const abstand = tageZwischen(t.date, suche.bezug);
+        const namePasst = namen.some((n) => empfaenger.toLowerCase().includes(n));
         treffer.push({
           id: t.id,
           konto_id: konto.id,
@@ -294,11 +318,164 @@ export async function kandidatenSuchen(haushaltId: number, bonId: number) {
     }
    }, budget).catch((fehler) => {
       // ein nicht erreichbares weiteres Budget soll die Suche im Haupt-Budget nicht verhindern
-      if (nr === 0 || bon.konto) throw fehler;
+      if (nr === 0 || suche.konto) throw fehler;
       console.warn(`Actual-Budget ${budget} nicht durchsuchbar:`, (fehler as Error).message);
     });
   }
-  return treffer.sort((a, b) => a.punkte - b.punkte).slice(0, 8);
+  return treffer;
+}
+
+type SammelBon = { id: number; datum: string; summe_cent: number; haendler: string | null; konto: string | null };
+
+/** Bons für eine Sammelbuchung laden und prüfen: alle im Haushalt, noch nicht gebucht, mit Karte bezahlt, mit Datum und Summe. */
+async function sammelBonsLaden(haushaltId: number, bonIds: number[]): Promise<SammelBon[]> {
+  const ids = [...new Set(bonIds)];
+  if (ids.length < 2) throw new Error(t("Für eine Sammelbuchung mindestens zwei Bons auswählen"));
+  if (ids.length > 50) throw new Error(t("Höchstens 50 Bons pro Sammelbuchung"));
+  const bons = await sql<(SammelBon & { status: string; zahlung: string; dublette_von: number | null })[]>`
+    select b.id, to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, h.name as haendler, b.actual_konto_id as konto,
+           b.status, b.zahlung, b.dublette_von
+      from bons b left join haendler h on h.id = b.haendler_id
+     where b.haushalt_id = ${haushaltId} and b.id in ${sql(ids)} order by b.datum, b.id`;
+  if (bons.length !== ids.length) throw new Error(t("Bon nicht gefunden"));
+  for (const b of bons) {
+    if (b.status === "gebucht") throw new Error(t("Bon {nr} ist schon in Actual gebucht", { nr: b.id }));
+    if (b.status !== "geprueft" && b.status !== "wartet") throw new Error(t("Bon {nr} ist noch nicht geprüft", { nr: b.id }));
+    if (b.zahlung === "bar") throw new Error(t("Bon {nr} ist bar bezahlt – Sammelbuchungen gibt es nur für Abbuchungen", { nr: b.id }));
+    if (b.dublette_von) throw new Error(t("Bon {nr} ist ein mögliches Duplikat", { nr: b.id }));
+    if (!b.datum || b.summe_cent == null) throw new Error(t("Bon {nr}: Datum oder Summe fehlen", { nr: b.id }));
+  }
+  return bons;
+}
+
+/** Abbuchungen, deren Betrag der Summe mehrerer Bons entspricht (z. B. mehrere Amazon-Rechnungen, eine Abbuchung). */
+export async function sammelKandidatenSuchen(haushaltId: number, bonIds: number[]) {
+  const bons = await sammelBonsLaden(haushaltId, bonIds);
+  const summe = bons.reduce((s, b) => s + b.summe_cent, 0);
+  const letztes = bons.at(-1)!.datum;
+  const treffer = await abbuchungenSuchen(haushaltId, {
+    passt: (cent) => cent === summe,
+    von: tagVerschieben(bons[0].datum, -4),
+    bis: tagVerschieben(letztes, 21),
+    bezug: letztes,
+    haendler: [...new Set(bons.map((b) => b.haendler).filter((h): h is string => Boolean(h)))],
+    konto: bons.every((b) => b.konto === bons[0].konto) ? bons[0].konto : null,
+    ausser: bons.map((b) => b.id),
+  });
+  return { summe_cent: summe, kandidaten: treffer.sort((a, b) => a.punkte - b.punkte).slice(0, 8) };
+}
+
+/** Alle Bons, die zur selben Buchung gehören: bei einer Sammelbuchung alle Bons, sonst nur der Bon selbst. */
+export async function buchungsBons(haushaltId: number, bonId: number): Promise<number[]> {
+  const zeilen = await sql<{ id: number }[]>`
+    select b2.id from bons b
+      join bons b2 on b2.haushalt_id = b.haushalt_id and b2.actual_tx_id = b.actual_tx_id and b2.sammel
+     where b.id = ${bonId} and b.haushalt_id = ${haushaltId} and b.sammel
+     order by b2.id`;
+  return zeilen.length ? zeilen.map((z) => z.id) : [bonId];
+}
+
+/**
+ * Vorschläge für Sammelbuchungen suchen: offene Bons desselben Geschäfts, deren Summe genau eine Abbuchung
+ * mit passendem Empfänger ergibt. Nur eindeutige Kombinationen werden vorgeschlagen; gebucht wird erst nach Bestätigung.
+ */
+export async function sammelVorschlaegeSuchen(haushaltId: number): Promise<number> {
+  const offen = await sql<(SammelBon & { haendler_id: number })[]>`
+    select b.id, to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, b.haendler_id, h.name as haendler, b.actual_konto_id as konto
+      from bons b join haendler h on h.id = b.haendler_id
+     where b.haushalt_id = ${haushaltId} and b.status in ('geprueft','wartet') and b.zahlung <> 'bar'
+       and b.actual_tx_id is null and b.dublette_von is null and b.datum is not null and b.summe_cent > 0
+     order by b.datum, b.id`;
+  const nachGeschaeft = new Map<number, (SammelBon & { haendler_id: number })[]>();
+  for (const b of offen) {
+    const liste = nachGeschaeft.get(b.haendler_id) ?? [];
+    liste.push(b);
+    nachGeschaeft.set(b.haendler_id, liste);
+  }
+
+  const vorschlaege: { ids: number[]; k: Kandidat }[] = [];
+  for (const bons of nachGeschaeft.values()) {
+    if (bons.length < 2) continue;
+    const groesster = Math.max(...bons.map((b) => b.summe_cent));
+    const alle = bons.reduce((s, b) => s + b.summe_cent, 0);
+    const abbuchungen = await abbuchungenSuchen(haushaltId, {
+      passt: (cent) => cent > groesster && cent <= alle,
+      von: tagVerschieben(bons[0].datum, -4),
+      bis: tagVerschieben(bons.at(-1)!.datum, 21),
+      bezug: bons.at(-1)!.datum,
+      haendler: [bons[0].haendler!],
+      konto: bons.every((b) => b.konto === bons[0].konto) ? bons[0].konto : null,
+      ausser: [],
+    });
+    for (const k of abbuchungen) {
+      if (!k.name_passt || k.aufgeteilt) continue;
+      // Rechnungen bis drei Wochen vor und wenige Tage nach der Abbuchung; höchstens 16 (die nächsten zuerst)
+      const moeglich = bons
+        .filter((b) => { const d = tageZwischen(k.datum, b.datum); return d >= -4 && d <= 21; })
+        .sort((a, b) => Math.abs(tageZwischen(k.datum, a.datum)) - Math.abs(tageZwischen(k.datum, b.datum)))
+        .slice(0, 16);
+      if (moeglich.length < 2) continue;
+      const ziel = -k.betrag_cent;
+      const loesungen: number[][] = [];
+      for (let maske = 3; maske < 1 << moeglich.length && loesungen.length < 2; maske++) {
+        if ((maske & (maske - 1)) === 0) continue; // nur ein Bon: wäre eine normale Einzelbuchung
+        let summe = 0;
+        for (let i = 0; i < moeglich.length; i++) if (maske & (1 << i)) summe += moeglich[i].summe_cent;
+        if (summe === ziel) loesungen.push(moeglich.filter((_, i) => maske & (1 << i)).map((b) => b.id).sort((a, b) => a - b));
+      }
+      if (loesungen.length === 1) vorschlaege.push({ ids: loesungen[0], k });
+    }
+  }
+
+  await sql.begin(async (tx) => {
+    await tx`delete from sammel_vorschlaege where haushalt_id = ${haushaltId} and not verworfen`;
+    for (const { ids, k } of vorschlaege) {
+      await tx`
+        insert into sammel_vorschlaege (haushalt_id, bon_ids, actual_tx_id, budget, konto_id, konto, datum, betrag_cent, empfaenger)
+        values (${haushaltId}, ${ids}, ${k.id}, ${k.budget}, ${k.konto_id}, ${k.konto}, ${k.datum}, ${-k.betrag_cent}, ${k.empfaenger})
+        on conflict (haushalt_id, actual_tx_id) do nothing`;
+    }
+  });
+  return vorschlaege.length;
+}
+
+/** Offene Vorschläge mit den beteiligten Bons; veraltete (Bon gebucht oder gelöscht, Abbuchung vergeben) fallen heraus. */
+export async function sammelVorschlaege(haushaltId: number) {
+  const zeilen = await sql<{ id: number; bon_ids: number[]; datum: string; betrag_cent: number; konto: string; empfaenger: string }[]>`
+    select v.id, v.bon_ids, to_char(v.datum, 'YYYY-MM-DD') as datum, v.betrag_cent, v.konto, v.empfaenger
+      from sammel_vorschlaege v
+     where v.haushalt_id = ${haushaltId} and not v.verworfen
+       and not exists (select 1 from bons b where b.haushalt_id = ${haushaltId} and b.actual_tx_id = v.actual_tx_id)
+       and (select count(*) from bons b
+             where b.haushalt_id = ${haushaltId} and b.id = any(v.bon_ids) and b.status in ('geprueft','wartet') and b.actual_tx_id is null
+           ) = cardinality(v.bon_ids)
+     order by v.datum desc`;
+  if (!zeilen.length) return [];
+  const bons = await sql<{ id: number; datum: string; summe_cent: number; haendler: string | null }[]>`
+    select b.id, to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, h.name as haendler
+      from bons b left join haendler h on h.id = b.haendler_id
+     where b.haushalt_id = ${haushaltId} and b.id in ${sql(zeilen.flatMap((z) => z.bon_ids))}`;
+  // ein Bon kann in mehreren Vorschlägen stecken; nach der ersten Bestätigung sind die anderen veraltet
+  return zeilen.map((z) => ({ ...z, bons: bons.filter((b) => z.bon_ids.includes(b.id)).sort((a, b) => a.datum.localeCompare(b.datum)) }));
+}
+
+/** Vorschlag bestätigen: die Bons gemeinsam auf die vorgeschlagene Abbuchung buchen. */
+export async function sammelVorschlagBuchen(haushaltId: number, vorschlagId: number): Promise<void> {
+  const [v] = await sql<{ bon_ids: number[]; actual_tx_id: string; budget: string }[]>`
+    select bon_ids, actual_tx_id, budget from sammel_vorschlaege where id = ${vorschlagId} and haushalt_id = ${haushaltId} and not verworfen`;
+  if (!v) throw new Error(t("Vorschlag nicht gefunden"));
+  await sammelBonsLaden(haushaltId, v.bon_ids);
+  await aufBuchungVerteilen(haushaltId, v.bon_ids, v.actual_tx_id, v.budget);
+}
+
+/** Sammelbuchung auflösen: Aufteilung in Actual zurücknehmen, alle Bons wieder offen zum Zuordnen. */
+export async function sammelAufloesen(haushaltId: number, bonId: number, hinweis = t("Sammelbuchung aufgelöst – bitte neu zuordnen.")): Promise<void> {
+  const ids = await buchungsBons(haushaltId, bonId);
+  if (ids.length < 2) throw new Error(t("Der Bon gehört zu keiner Sammelbuchung"));
+  await actualZuruecknehmen(haushaltId, bonId);
+  await sql`
+    update bons set status = 'geprueft', actual_tx_id = null, sammel = false, abgleich_hinweis = ${hinweis}, abgleich_am = now(), geaendert_am = now()
+     where haushalt_id = ${haushaltId} and id in ${sql(ids)}`;
 }
 
 type Teil = { kategorie: string; cent: number; notiz: string };
@@ -307,7 +484,7 @@ type Teil = { kategorie: string; cent: number; notiz: string };
  * Positionen nach Actual-Kategorie (über die Hauptgruppe) zusammenfassen – im Haupt-Budget über
  * gruppen.actual_kategorie_id, in weiteren Budgets über gruppen_kategorien.
  */
-async function teileBerechnen(haushaltId: number, bonId: number, zielCent: number, syncId?: string): Promise<Teil[]> {
+async function teileBerechnen(haushaltId: number, bonIds: number[], zielCent: number, syncId?: string): Promise<Teil[]> {
   const einstellung = await actualEinstellung(haushaltId);
   const haupt = (await actualZugang(haushaltId))?.syncId;
   const weiteres = syncId && syncId !== haupt ? syncId : null;
@@ -321,7 +498,7 @@ async function teileBerechnen(haushaltId: number, bonId: number, zielCent: numbe
           left join gruppen h on h.id = u.eltern_id
           left join gruppen_kategorien gu on gu.gruppe_id = u.id and gu.sync_id = ${weiteres}
           left join gruppen_kategorien gh on gh.gruppe_id = h.id and gh.sync_id = ${weiteres}
-         where p.bon_id = ${bonId}
+         where p.bon_id in ${sql(bonIds)}
          group by 1, 2, 3`
     : await sql<{ kategorie: string | null; haupt: string | null; unter: string | null; cent: number }[]>`
         -- eigene Kategorie der Untergruppe (z. B. Auto/Tanken -> Tanken), sonst die des Bereichs, sonst Standard
@@ -331,7 +508,7 @@ async function teileBerechnen(haushaltId: number, bonId: number, zielCent: numbe
           join bons b on b.id = p.bon_id and b.haushalt_id = ${haushaltId}
           left join gruppen u on u.id = p.gruppe_id
           left join gruppen h on h.id = u.eltern_id
-         where p.bon_id = ${bonId}
+         where p.bon_id in ${sql(bonIds)}
          group by 1, 2, 3`;
 
   const fehlend = [...new Set(zeilen.filter((z) => !z.kategorie).map((z) => z.haupt ?? t("Ohne Gruppe")))];
@@ -363,26 +540,31 @@ async function teileBerechnen(haushaltId: number, bonId: number, zielCent: numbe
   return liste;
 }
 
-/** Eine vorhandene Abbuchung in Actual nach Warengruppen aufteilen (im Budget der Abbuchung). */
-export async function aufBuchungVerteilen(haushaltId: number, bonId: number, transaktionId: string, syncId?: string): Promise<void> {
+/**
+ * Eine vorhandene Abbuchung in Actual nach Warengruppen aufteilen (im Budget der Abbuchung).
+ * Mit mehreren Bons entsteht eine Sammelbuchung: die Positionen aller Bons zusammen ergeben die Aufteilung.
+ */
+export async function aufBuchungVerteilen(haushaltId: number, bon: number | number[], transaktionId: string, syncId?: string): Promise<void> {
+  const ids = [...new Set(Array.isArray(bon) ? bon : [bon])].sort((x, y) => x - y);
   // Kategorien vorab berechnen: teileBerechnen fragt selbst nichts bei Actual an, braucht aber das Budget
   const budget = syncId ?? (await actualZugang(haushaltId))?.syncId;
   await mitActual(haushaltId, async () => {
-    const [bon] = await sql<{ datum: string }[]>`
-      select to_char(datum, 'YYYY-MM-DD') as datum from bons where id = ${bonId} and haushalt_id = ${haushaltId}`;
-    if (!bon?.datum) throw new Error(t("Bon nicht gefunden oder ohne Datum"));
+    const [zeitraum] = await sql<{ von: string | null; bis: string | null; anzahl: number }[]>`
+      select to_char(min(datum), 'YYYY-MM-DD') as von, to_char(max(datum), 'YYYY-MM-DD') as bis, count(*)::int as anzahl
+        from bons where id in ${sql(ids)} and haushalt_id = ${haushaltId}`;
+    if (!zeitraum?.von || !zeitraum.bis || zeitraum.anzahl !== ids.length) throw new Error(t("Bon nicht gefunden oder ohne Datum"));
     let gefunden: Transaktion | undefined;
     let kontoId = "";
     for (const konto of (await api.getAccounts()).filter((k) => !k.closed)) {
-      const liste = await api.getTransactions(konto.id, tagVerschieben(bon.datum, -30), tagVerschieben(bon.datum, 30));
+      const liste = await api.getTransactions(konto.id, tagVerschieben(zeitraum.von, -30), tagVerschieben(zeitraum.bis, 30));
       gefunden = liste.find((x) => x.id === transaktionId);
       if (gefunden) { kontoId = konto.id; break; }
     }
     if (!gefunden) throw new Error(t("Buchung in Actual nicht gefunden"));
     if (gefunden.is_parent) throw new Error(t("Die Buchung ist in Actual bereits aufgeteilt – dort zuerst die Aufteilung aufheben"));
 
-    const teile = await teileBerechnen(haushaltId, bonId, -gefunden.amount, budget);
-    const notiz = [gefunden.notes, `#tillsplit Bon ${bonId}`].filter(Boolean).join(" ");
+    const teile = await teileBerechnen(haushaltId, ids, -gefunden.amount, budget);
+    const notiz = [gefunden.notes, `#tillsplit Bon ${ids.join(", ")}`].filter(Boolean).join(" ");
     if (teile.length === 1) {
       await api.updateTransaction(gefunden.id, { category: teile[0].kategorie, notes: notiz });
     } else {
@@ -392,13 +574,14 @@ export async function aufBuchungVerteilen(haushaltId: number, bonId: number, tra
       } as Partial<Transaktion>);
     }
     await api.sync();
-    const [bon2] = await sql<{ karte_endziffern: string | null }[]>`
+    const gebucht = await sql<{ karte_endziffern: string | null }[]>`
       update bons set status = 'gebucht', actual_tx_id = ${gefunden.id}, actual_konto_id = ${kontoId}, actual_tx_angelegt = false,
-             abgleich_hinweis = null, gebucht_am = now(), geaendert_am = now()
-       where id = ${bonId} and haushalt_id = ${haushaltId} returning karte_endziffern`;
+             sammel = ${ids.length > 1}, abgleich_hinweis = null, gebucht_am = now(), geaendert_am = now()
+       where id in ${sql(ids)} and haushalt_id = ${haushaltId} returning karte_endziffern`;
+    await sql`delete from sammel_vorschlaege where haushalt_id = ${haushaltId} and actual_tx_id = ${gefunden.id}`;
     // Karte lernen: auf welchem Konto tauchen Zahlungen mit dieser Karte auf?
-    if (bon2?.karte_endziffern) {
-      await sql`insert into kartenzuordnung (haushalt_id, endziffern, actual_konto_id) values (${haushaltId}, ${bon2.karte_endziffern}, ${kontoId})
+    for (const endziffern of new Set(gebucht.map((b) => b.karte_endziffern).filter((e): e is string => Boolean(e)))) {
+      await sql`insert into kartenzuordnung (haushalt_id, endziffern, actual_konto_id) values (${haushaltId}, ${endziffern}, ${kontoId})
                 on conflict (haushalt_id, endziffern) do nothing`;
     }
   }, budget);
@@ -491,6 +674,10 @@ export async function alleAbgleichen(haushaltId: number): Promise<Record<Abgleic
       await sql`update bons set abgleich_hinweis = ${t("Abgleich fehlgeschlagen: {meldung}", { meldung: t((fehler as Error).message) })}, abgleich_am = now() where id = ${id}`;
     }
   }
+  // übrig gebliebene Bons: ergibt die Summe mehrerer zusammen eine Abbuchung (z. B. Amazon)?
+  if (zaehler.wartet + zaehler.auswahl >= 2) {
+    await sammelVorschlaegeSuchen(haushaltId).catch((e) => console.warn(`Sammel-Vorschläge Haushalt ${haushaltId}:`, (e as Error).message));
+  }
   return zaehler;
 }
 
@@ -530,7 +717,7 @@ export async function neueBuchungAnlegen(haushaltId: number, bonId: number, kont
         from bons b left join haendler h on h.id = b.haendler_id where b.id = ${bonId} and b.haushalt_id = ${haushaltId}`;
     if (!bon?.datum || bon.summe_cent == null) throw new Error(t("Datum oder Summe des Bons fehlen"));
 
-    const teile = await teileBerechnen(haushaltId, bonId, bon.summe_cent, syncId);
+    const teile = await teileBerechnen(haushaltId, [bonId], bon.summe_cent, syncId);
     const kennung = `#tillsplit Bon ${bonId}`;
     const aufteilung = teile.map((teil) => ({ amount: -teil.cent, category: teil.kategorie, notes: teil.notiz }));
     await api.addTransactions(kontoId, [
@@ -586,7 +773,8 @@ export async function actualZuruecknehmen(haushaltId: number, bonId: number): Pr
     }
     // Teile einzeln löschen, dann die Hauptbuchung wieder unkategorisiert lassen
     for (const teil of gefunden.subtransactions ?? []) await api.deleteTransaction(teil.id);
-    const notiz = (gefunden.notes ?? "").replace(new RegExp(`\\s*#tillsplit Bon ${bonId}\\b`), "").trim();
+    // Vermerk entfernen – bei einer Sammelbuchung stehen alle Bons darin („#tillsplit Bon 21, 22, 23“)
+    const notiz = (gefunden.notes ?? "").replace(/\s*#tillsplit Bon \d+(?:, \d+)*/, "").trim();
     // is_parent bleibt nach dem Löschen der Teile sonst gesetzt
     await api.updateTransaction(gefunden.id, { category: null, notes: notiz || null, is_parent: false } as unknown as Partial<Transaktion>);
     await api.sync();
@@ -602,6 +790,8 @@ export async function neuAufteilen(haushaltId: number, bonId: number): Promise<v
   const [bon] = await sql<{ actual_tx_id: string | null; actual_tx_angelegt: boolean; actual_konto_id: string | null }[]>`
     select actual_tx_id, actual_tx_angelegt, actual_konto_id from bons where id = ${bonId} and haushalt_id = ${haushaltId} and status = 'gebucht'`;
   if (!bon?.actual_tx_id) return;
+  // bei einer Sammelbuchung die ganze Abbuchung mit allen Bons neu aufteilen
+  const ids = await buchungsBons(haushaltId, bonId);
   await actualZuruecknehmen(haushaltId, bonId);
   try {
     if (bon.actual_tx_angelegt) {
@@ -609,14 +799,14 @@ export async function neuAufteilen(haushaltId: number, bonId: number): Promise<v
       if (!konto) throw new Error(t("Kein Bargeld-Konto festgelegt"));
       await barBuchen(haushaltId, bonId, konto);
     } else {
-      await aufBuchungVerteilen(haushaltId, bonId, bon.actual_tx_id, await kontoBudget(haushaltId, bon.actual_konto_id));
+      await aufBuchungVerteilen(haushaltId, ids, bon.actual_tx_id, await kontoBudget(haushaltId, bon.actual_konto_id));
     }
   } catch (fehler) {
     // Abbuchung bleibt ungeteilt in Actual stehen -> Bon wieder zum Abgleich vormerken
     await sql`
-      update bons set status = 'geprueft', actual_tx_id = null, abgleich_am = now(),
+      update bons set status = 'geprueft', actual_tx_id = null, sammel = false, abgleich_am = now(),
              abgleich_hinweis = ${t("Neu aufteilen fehlgeschlagen: {meldung}", { meldung: t((fehler as Error).message) })}
-       where id = ${bonId} and haushalt_id = ${haushaltId}`;
+       where id in ${sql(ids)} and haushalt_id = ${haushaltId}`;
     throw fehler;
   }
 }

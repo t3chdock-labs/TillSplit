@@ -279,5 +279,19 @@
   "Budgets fürs Finanz-Dashboard und Vermögenskonten festlegen": "Pick budgets for the finance dashboard and asset accounts",
   "Kategorien je Budget zuordnen": "Map categories per budget",
   "Unbekanntes Konto": "Unknown account",
-  "Ohne Konto": "No account"
+  "Ohne Konto": "No account",
+  "Für eine Sammelbuchung mindestens zwei Bons auswählen": "Select at least two receipts for a combined booking",
+  "Höchstens 50 Bons pro Sammelbuchung": "At most 50 receipts per combined booking",
+  "Bon {nr} ist schon in Actual gebucht": "Receipt {nr} is already booked in Actual",
+  "Bon {nr} ist noch nicht geprüft": "Receipt {nr} has not been checked yet",
+  "Bon {nr} ist bar bezahlt – Sammelbuchungen gibt es nur für Abbuchungen": "Receipt {nr} was paid in cash – combined bookings are only for debits",
+  "Bon {nr} ist ein mögliches Duplikat": "Receipt {nr} is a possible duplicate",
+  "Bon {nr}: Datum oder Summe fehlen": "Receipt {nr}: date or total missing",
+  "Vorschlag nicht gefunden": "Suggestion not found",
+  "Sammelbuchung aufgelöst – bitte neu zuordnen.": "Combined booking dissolved – please assign again.",
+  "Der Bon gehört zu keiner Sammelbuchung": "The receipt is not part of a combined booking",
+  "Sammelbuchung aufgelöst, weil Bon {nr} gelöscht wurde – bitte neu zuordnen.": "Combined booking dissolved because receipt {nr} was deleted – please assign again.",
+  "Sammelbuchung in Actual aufgelöst": "Combined booking dissolved in Actual",
+  "Die Abbuchung passt nicht (mehr) zur Summe der Bons": "The debit doesn't match the receipts' total (any more)",
+  "transaktionId angeben": "Specify transaktionId"
 }

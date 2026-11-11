@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, type BonListeneintrag } from "../api";
-import { Kopf, Leer, StatusMarke, useDaten } from "../komponenten/Bausteine";
+import { Hinweis, Kopf, Leer, StatusMarke, useDaten } from "../komponenten/Bausteine";
+import { SammelDialog, SammelVorschlaege } from "../komponenten/Sammelbuchung";
 import { useHochladen } from "../komponenten/Hochladen";
 import { Symbol } from "../komponenten/Symbol";
 import { datum, euro, iso, monatsNamen, zahlungText } from "../format";
@@ -40,6 +41,10 @@ function zeitraumVon(art: ZeitArt, wert: { jahr: string; monat: string; tag: str
   if (art === "frei") return { von: wert.von || null, bis: wert.bis || null };
   return { von: null, bis: null };
 }
+
+/** Für eine Sammelbuchung wählbar: geprüft, noch nicht gebucht, nicht bar bezahlt, kein mögliches Duplikat */
+const sammelWaehlbar = (b: BonListeneintrag) =>
+  (b.status === "geprueft" || b.status === "wartet") && b.zahlung !== "bar" && !b.dublette_von && b.summe_cent != null;
 
 /** Kleines Vorschaubild: Fotos verkleinert, bei PDFs die erste Seite; schlägt das fehl, bleibt die Beschriftung */
 function Vorschaubild({ bon }: { bon: BonListeneintrag }) {
@@ -112,6 +117,19 @@ export function Bons() {
 
   const seiten = daten ? Math.ceil(daten.gesamt / daten.proSeite) : 1;
 
+  // Sammelbuchung: Bons auswählen (null = Auswahl aus), Summe je Bon merken (auch über Seiten hinweg)
+  const [auswahl, setAuswahl] = useState<Map<number, number> | null>(null);
+  const [sammelOffen, setSammelOffen] = useState(false);
+  const [vorschlagZaehler, setVorschlagZaehler] = useState(0);
+  const umschalten = (b: BonListeneintrag) => {
+    if (!auswahl || !sammelWaehlbar(b)) return;
+    const neu = new Map(auswahl);
+    if (neu.has(b.id)) neu.delete(b.id);
+    else neu.set(b.id, b.summe_cent ?? 0);
+    setAuswahl(neu);
+  };
+  const auswahlSumme = auswahl ? [...auswahl.values()].reduce((s, c) => s + c, 0) : 0;
+
   const [gleichtAb, setGleichtAb] = useState(false);
   const [abgleichText, setAbgleichText] = useState<string | null>(null);
   const abgleichen = async () => {
@@ -129,6 +147,7 @@ export function Bons() {
       ].filter(Boolean);
       setAbgleichText(teile.length ? teile.join(" · ") : t("Nichts offen"));
       neuLaden();
+      setVorschlagZaehler((z) => z + 1);
     } catch (e) {
       setAbgleichText((e as Error).message);
     } finally {
@@ -142,7 +161,16 @@ export function Bons() {
         titel={t("Bons")}
         unter={abgleichText ?? (daten ? t("{n} Bon|{n} Bons", { n: daten.gesamt }) : undefined)}
         rechts={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            {darf("bons_bearbeiten") && (
+              <button
+                className={auswahl ? "knopf-haupt" : "knopf-zweit"}
+                onClick={() => setAuswahl(auswahl ? null : new Map())}
+                title={t("Mehrere Bons gemeinsam auf eine Abbuchung buchen (z. B. mehrere Amazon-Rechnungen)")}
+              >
+                <Symbol name="link" className="size-4" /> <span className="max-sm:hidden">{auswahl ? t("Auswahl beenden") : t("Zusammen buchen")}</span><span className="sm:hidden">{auswahl ? t("Fertig") : t("Bündeln")}</span>
+              </button>
+            )}
             {darf("bons_bearbeiten") && (
               <button className="knopf-zweit" disabled={gleichtAb} onClick={abgleichen} title={t("Nach dem Bankimport: offene Bons den Abbuchungen zuordnen")}>
                 <Symbol name="aktualisieren" className={`size-4 ${gleichtAb ? "animate-spin" : ""}`} /> <span className="max-sm:hidden">{t("Mit Actual abgleichen")}</span><span className="sm:hidden">{t("Abgleichen")}</span>
@@ -154,6 +182,17 @@ export function Bons() {
           </div>
         }
       />
+
+      {darf("bons_bearbeiten") && !auswahl && (
+        <SammelVorschlaege neuLadenZaehler={vorschlagZaehler} onGebucht={neuLaden} />
+      )}
+      {auswahl && (
+        <div className="mb-4">
+          <Hinweis art="info">
+            {t("Wähle die Bons, die zusammen abgebucht wurden (z. B. mehrere Amazon-Rechnungen mit einer Abbuchung). Wählbar sind geprüfte Bons, die noch nicht in Actual gebucht und nicht bar bezahlt sind.")}
+          </Hinweis>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex flex-wrap gap-1.5">
@@ -251,8 +290,20 @@ export function Bons() {
         <div className="karte divide-y divide-rand overflow-hidden">
           {daten?.bons.map((b) => {
             const abweichung = b.summe_cent != null && b.anzahl_positionen > 0 && b.summe_cent !== b.positionen_cent;
-            return (
-              <Link key={b.id} to={`/bons/${b.id}`} className="flex items-center gap-4 px-4 py-3 transition hover:bg-flaeche-2">
+            const waehlbar = sammelWaehlbar(b);
+            const inhalt = (
+              <>
+                {auswahl && (
+                  <input
+                    type="checkbox"
+                    className="size-5 shrink-0 accent-[var(--color-akzent)]"
+                    checked={auswahl.has(b.id)}
+                    disabled={!waehlbar}
+                    readOnly
+                    tabIndex={-1}
+                    aria-hidden
+                  />
+                )}
                 <div className="size-12 shrink-0 overflow-hidden rounded-lg border border-rand bg-flaeche-2">
                   <Vorschaubild bon={b} />
                 </div>
@@ -275,6 +326,11 @@ export function Bons() {
                         {t("Bild prüfen")}
                       </span>
                     )}
+                    {b.sammel && (
+                      <span className="shrink-0 rounded-full bg-akzent-hell px-2 py-0.5 text-[11px] font-semibold text-akzent" title={t("Mit anderen Bons zusammen auf eine Abbuchung gebucht")}>
+                        {t("Sammelbuchung")}
+                      </span>
+                    )}
                     {b.dublette_von && (
                       <span className="shrink-0 rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-fehler">{t("Doppelt?")}</span>
                     )}
@@ -287,7 +343,24 @@ export function Bons() {
                   </div>
                 </div>
                 <div className="text-right font-semibold">{euro(b.summe_cent)}</div>
-                <Symbol name="weiter" className="size-4 text-text-3" />
+                {!auswahl && <Symbol name="weiter" className="size-4 text-text-3" />}
+              </>
+            );
+            return auswahl ? (
+              <button
+                key={b.id}
+                type="button"
+                role="checkbox"
+                aria-checked={auswahl.has(b.id)}
+                disabled={!waehlbar}
+                onClick={() => umschalten(b)}
+                className={`flex w-full items-center gap-4 px-4 py-3 text-left transition ${waehlbar ? "hover:bg-flaeche-2" : "opacity-45"} ${auswahl.has(b.id) ? "bg-akzent-hell/40" : ""}`}
+              >
+                {inhalt}
+              </button>
+            ) : (
+              <Link key={b.id} to={`/bons/${b.id}`} className="flex items-center gap-4 px-4 py-3 transition hover:bg-flaeche-2">
+                {inhalt}
               </Link>
             );
           })}
@@ -306,6 +379,34 @@ export function Bons() {
             {t("Weiter")}
           </button>
         </div>
+      )}
+      {auswahl && <div className="h-20" aria-hidden />}
+      {auswahl && (
+        <div className="fixed inset-x-0 bottom-24 z-40 flex justify-center px-4 md:bottom-6">
+          <div className="karte flex w-full max-w-md items-center gap-3 px-4 py-3 shadow-2xl">
+            <div className="min-w-0 flex-1 text-sm">
+              <div className="truncate font-semibold">{t("{n} ausgewählt", { n: auswahl.size })}</div>
+              <div className="truncate text-xs text-text-2">{t("Zusammen {betrag}", { betrag: euro(auswahlSumme) })}</div>
+            </div>
+            {/* auf dem Handy beendet der Knopf oben die Auswahl – hier fehlt der Platz */}
+            <button className="knopf-zweit max-sm:hidden" onClick={() => setAuswahl(null)}>{t("Abbrechen")}</button>
+            <button className="knopf-haupt shrink-0" disabled={auswahl.size < 2} onClick={() => setSammelOffen(true)}>
+              {t("Abbuchung suchen")}
+            </button>
+          </div>
+        </div>
+      )}
+      {auswahl && sammelOffen && (
+        <SammelDialog
+          bonIds={[...auswahl.keys()]}
+          onAbbrechen={() => setSammelOffen(false)}
+          onFertig={() => {
+            setSammelOffen(false);
+            setAuswahl(null);
+            neuLaden();
+            setVorschlagZaehler((z) => z + 1);
+          }}
+        />
       )}
     </>
   );

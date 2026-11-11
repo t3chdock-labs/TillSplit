@@ -15,7 +15,7 @@ export function Fusszeile({ className = "" }: { className?: string }) {
   return (
     <div className={`space-y-1 text-xs text-text-3 ${className}`}>
       <p>
-        {t("Version")} {info?.version ?? "0.1.2"} · {info?.lizenz ?? "AGPL-3.0"}
+        {t("Version")} {info?.version ?? "0.1.3"} · {info?.lizenz ?? "AGPL-3.0"}
         {info?.quellcode && (
           <>
             {" · "}

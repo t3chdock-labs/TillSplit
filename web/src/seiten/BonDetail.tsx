@@ -4,6 +4,7 @@ import { api, type AbgleichErgebnis, type Bon, type Gruppe, type Kandidat, type 
 import { Farbpunkt, Hinweis, KontoOptionen, StatusMarke, useDaten } from "../komponenten/Bausteine";
 import { GruppenWahl } from "../komponenten/GruppenWahl";
 import { PdfAnsicht } from "../komponenten/PdfAnsicht";
+import { SammelBonListe } from "../komponenten/Sammelbuchung";
 import { SortenWahl, type Sorte } from "../komponenten/SortenWahl";
 import { Symbol } from "../komponenten/Symbol";
 import { centAlsText, centAusText, datum, euro, geld, zahl, zahlungText } from "../format";
@@ -86,6 +87,21 @@ function ActualBereich({
     }
   };
 
+  const sammelBons = bon.sammel_bons ?? [];
+  const aufloesen = async () => {
+    if (!confirm(t("Sammelbuchung auflösen? Die Aufteilung in Actual wird zurückgenommen (die Abbuchung bleibt), alle {n} Bons sind danach wieder offen.", { n: sammelBons.length }))) return;
+    setArbeitet(true);
+    setMeldung(null);
+    try {
+      await api.post(`/api/bons/${bon.id}/sammel-aufloesen`);
+      onGebucht();
+    } catch (e) {
+      setMeldung((e as Error).message);
+    } finally {
+      setArbeitet(false);
+    }
+  };
+
   const kontoName = (id: string | null) => konten?.find((k) => k.id === id)?.name;
   const gesamt = aufteilung.reduce((s, a) => s + Math.abs(a.cent), 0) || 1;
 
@@ -113,10 +129,27 @@ function ActualBereich({
       </div>
 
       {bon.status === "gebucht" ? (
-        <Hinweis art="gut">
-          {bon.gebucht_am ? t("In Actual gebucht am {datum}", { datum: datum(bon.gebucht_am) }) : t("In Actual gebucht")}
-          {kontoName(bon.actual_konto_id) && ` (${kontoName(bon.actual_konto_id)})`}.
-        </Hinweis>
+        <>
+          <Hinweis art="gut">
+            {bon.gebucht_am ? t("In Actual gebucht am {datum}", { datum: datum(bon.gebucht_am) }) : t("In Actual gebucht")}
+            {kontoName(bon.actual_konto_id) && ` (${kontoName(bon.actual_konto_id)})`}.
+          </Hinweis>
+          {sammelBons.length > 1 && (
+            <div className="mt-4">
+              <p className="mb-2 text-sm text-text-2">
+                {t("Sammelbuchung: Diese {n} Bons sind zusammen auf eine Abbuchung über {betrag} gebucht.", {
+                  n: sammelBons.length,
+                  betrag: euro(sammelBons.reduce((s, b) => s + b.summe_cent, 0)),
+                })}
+              </p>
+              <SammelBonListe bons={sammelBons} aktuell={bon.id} />
+              <button className="knopf-zweit mt-3" disabled={arbeitet} onClick={aufloesen}>
+                {arbeitet ? t("Wird zurückgenommen …") : t("Sammelbuchung auflösen")}
+              </button>
+              {meldung && <div className="mt-3"><Hinweis art="fehler">{meldung}</Hinweis></div>}
+            </div>
+          )}
+        </>
       ) : bon.zahlung === "bar" ? (
         <>
           {bon.abgleich_hinweis && (
@@ -158,6 +191,10 @@ function ActualBereich({
               <button className="knopf-zweit" disabled={arbeitet} onClick={erneutSuchen}>
                 <Symbol name="aktualisieren" className="size-4" /> {t("Erneut suchen")}
               </button>
+              <p className="w-full text-xs text-text-3">
+                {t("Wurde der Bon mit anderen zusammen abgebucht (z. B. mehrere Amazon-Rechnungen)? In der Bon-Liste „Zusammen buchen“ wählen und die Bons ankreuzen.")}{" "}
+                <Link to="/bons?status=wartet" className="text-akzent hover:underline">{t("Zur Bon-Liste")}</Link>
+              </p>
             </div>
           )}
           {kandidaten && kandidaten.length > 0 && (
@@ -341,7 +378,9 @@ export function BonDetail() {
     let actual = "";
     if (bon.actual_tx_id) {
       const zuruecknehmen = confirm(
-        bon.zahlung === "bar"
+        bon.sammel
+          ? t("Dieser Bon gehört zu einer Sammelbuchung mit {n} Bons. Soll die Aufteilung in Actual zurückgenommen werden? Die übrigen Bons sind danach wieder offen und können neu zugeordnet werden.\n\nOK = zurücknehmen · Abbrechen = in Actual lassen", { n: bon.sammel_bons?.length ?? 2 })
+          : bon.zahlung === "bar"
           ? t("Die Buchung in Actual wurde von TillSplit angelegt. Soll sie in Actual ebenfalls gelöscht werden?\n\nOK = in Actual löschen · Abbrechen = in Actual lassen")
           : t("Die Abbuchung in Actual ist nach diesem Bon aufgeteilt. Soll die Aufteilung zurückgenommen werden (die Abbuchung selbst bleibt)?\n\nOK = zurücknehmen · Abbrechen = in Actual lassen"),
       );

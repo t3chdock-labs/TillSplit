@@ -71,6 +71,8 @@ export type BonListeneintrag = {
   ohne_gruppe?: number;
   /** Positionen, die die KI als unsicher gelesen markiert hat */
   unsicher?: number;
+  /** gehört zu einer Sammelbuchung (mehrere Bons, eine Abbuchung) */
+  sammel?: boolean;
 };
 
 export type Position = {
@@ -135,6 +137,21 @@ export type Bon = {
   konto_quelle: "hand" | "karte" | "bargeld" | null;
   abgleich_hinweis: string | null;
   abgleich_am: string | null;
+  /** Sammelbuchung: alle Bons derselben Abbuchung (einschließlich dieses Bons) */
+  sammel?: boolean;
+  sammel_bons?: SammelBon[];
+};
+
+export type SammelBon = { id: number; datum: string | null; summe_cent: number; haendler: string | null };
+
+/** Vorschlag aus dem Abgleich: mehrere offene Bons ergeben zusammen genau eine Abbuchung */
+export type SammelVorschlag = {
+  id: number;
+  datum: string;
+  betrag_cent: number;
+  konto: string;
+  empfaenger: string;
+  bons: SammelBon[];
 };
 
 export type Gruppe = {

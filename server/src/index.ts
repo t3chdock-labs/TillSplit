@@ -90,7 +90,7 @@ app.addHook("onSend", async (req, antwort, nutzlast) => {
 // Öffentliche Angaben für Fußzeile und Anmeldeseite
 const nurHttp = (url?: string) => (url && /^https?:\/\//.test(url) ? url : null);
 app.get("/api/info", async () => ({
-  version: "0.1.2",
+  version: "0.1.3",
   lizenz: "AGPL-3.0",
   quellcode: nurHttp(config.quellcodeUrl),
   spenden: nurHttp(config.spendenUrl),

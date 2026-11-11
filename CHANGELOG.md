@@ -5,6 +5,18 @@
 All notable changes to TillSplit. Versions follow [Semantic Versioning](https://semver.org/);
 Docker images: `t3chdocklabs/tillsplit:<version>` and `ghcr.io/t3chdock-labs/tillsplit:<version>`.
 
+## [0.1.3] – 2026-11-11
+
+### Added
+- **Combined booking:** book several receipts to one debit together, e.g. several Amazon invoices that are
+  charged as one payment. In the receipt list choose "Book together", tick the receipts and pick the debit
+  matching their total; it is split in Actual by the areas of all receipts. Also works afterwards for receipts
+  that were already uploaded.
+- **Suggestions during matching:** if several open receipts from the same store add up to exactly one debit,
+  TillSplit suggests the combined booking – it is only booked after you confirm.
+- The receipt page lists all receipts of a combined booking; "Dissolve combined booking" undoes the split in
+  Actual. Changing one receipt re-splits the whole booking; deleting one dissolves it.
+
 ## [0.1.2] – 2026-11-06
 
 ### Added
@@ -49,6 +61,7 @@ Docker images: `t3chdocklabs/tillsplit:<version>` and `ghcr.io/t3chdock-labs/til
 
 First public release.
 
+[0.1.3]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/t3chdock-labs/TillSplit/releases/tag/v0.1.0

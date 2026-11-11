@@ -1,4 +1,4 @@
-# TillSplit 0.1.2
+# TillSplit 0.1.3
 
 [![Lizenz: AGPL-3.0](https://img.shields.io/badge/Lizenz-AGPL--3.0-blue.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-unterst%C3%BCtzen-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/tamperold)
@@ -37,11 +37,11 @@ Ablage der Originale: `<RECEIPT_DIR>/<Jahr>/<Monat>/<Datum>_<Geschäft>_<Summe>.
 Fertige Images für amd64 und arm64:
 
 ```bash
-docker pull t3chdocklabs/tillsplit:0.1.2        # Docker Hub
-docker pull ghcr.io/t3chdock-labs/tillsplit:0.1.2  # GitHub Container Registry
+docker pull t3chdocklabs/tillsplit:0.1.3        # Docker Hub
+docker pull ghcr.io/t3chdock-labs/tillsplit:0.1.3  # GitHub Container Registry
 ```
 
-Oder selbst bauen: `docker build -t tillsplit:0.1.2 .` (bei mehreren Knoten in die eigene Registry pushen).
+Oder selbst bauen: `docker build -t tillsplit:0.1.3 .` (bei mehreren Knoten in die eigene Registry pushen).
 
 ### 2. Secrets anlegen
 
@@ -163,7 +163,7 @@ Im *Admin-Bereich → Backups*: Zeitplan (nur von Hand, alle 6/12 Stunden, tägl
 
 ```bash
 # 1. entschlüsseln (im TillSplit-Container oder mit Node auf dem Host)
-docker run --rm -i -e BACKUP_PASSWORD='…' -v "$PWD:/b" t3chdocklabs/tillsplit:0.1.2 \
+docker run --rm -i -e BACKUP_PASSWORD='…' -v "$PWD:/b" t3chdocklabs/tillsplit:0.1.3 \
   node dist/werkzeuge/backup-entschluesseln.js /b/tillsplit-….tar.gz.enc > backup.tar.gz
 # 2. auspacken: datenbank.dump, schluessel.txt, info.json und die Bon-Ordner (data/bons/…)
 tar -xzf backup.tar.gz

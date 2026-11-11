@@ -5,6 +5,18 @@
 Alle wichtigen Änderungen an TillSplit. Die Versionen folgen [Semantic Versioning](https://semver.org/lang/de/);
 Docker-Images: `t3chdocklabs/tillsplit:<version>` und `ghcr.io/t3chdock-labs/tillsplit:<version>`.
 
+## [0.1.3] – 2026-11-11
+
+### Neu
+- **Sammelbuchung:** Mehrere Bons gemeinsam auf eine Abbuchung buchen, z. B. mehrere Amazon-Rechnungen, die
+  zusammen abgebucht werden. In der Bon-Liste „Zusammen buchen“ wählen, Bons ankreuzen und die Abbuchung über
+  die Summe auswählen; sie wird in Actual nach den Bereichen aller Bons aufgeteilt. Geht auch nachträglich mit
+  bereits hochgeladenen Bons.
+- **Vorschläge beim Abgleich:** Ergeben mehrere offene Bons desselben Geschäfts zusammen genau eine Abbuchung,
+  schlägt TillSplit die Sammelbuchung vor – gebucht wird erst nach Bestätigung.
+- Bon-Seite zeigt alle Bons einer Sammelbuchung; „Sammelbuchung auflösen“ nimmt die Aufteilung in Actual zurück.
+  Wird ein Bon geändert, wird die ganze Sammelbuchung neu aufgeteilt; wird einer gelöscht, wird sie aufgelöst.
+
 ## [0.1.2] – 2026-11-06
 
 ### Neu
@@ -49,6 +61,7 @@ Docker-Images: `t3chdocklabs/tillsplit:<version>` und `ghcr.io/t3chdock-labs/til
 
 Erste öffentliche Version.
 
+[0.1.3]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/t3chdock-labs/TillSplit/releases/tag/v0.1.0
