@@ -144,6 +144,52 @@ export async function auswertungRouten(app: FastifyInstance) {
     };
   });
 
+  // Preisänderungen: letzter Preis im Zeitraum gegen den Preis davor – je Artikel und Geschäft, die größten zuerst
+  app.get<{ Querystring: Filter }>("/api/auswertung/preise", async (req) => {
+    const h = zugriff(req, "bons_sehen");
+    const f = req.query;
+    const von = datumOk(f.von);
+    type Zeile = {
+      name: string; haendler: string | null; untergruppe: string; farbe: string; einheit: string | null;
+      datum: string; preis_cent: number; alt_datum: string; alt_cent: number;
+    };
+    // Vergleichspreis: der letzte Kauf vor dem Zeitraum, sonst der erste im Zeitraum. Verglichen wird der Preis je
+    // Stück/Einheit: der Einzelpreis vom Bon, sonst Betrag durch Menge. Nur Käufe mit gleicher Einheit.
+    const zeilen = await sql<Zeile[]>`
+      with p as (
+        select position_id, artikel, coalesce(haendler, '') as haendler, untergruppe, untergruppe_farbe as farbe,
+               datum, einheit,
+               coalesce(einzelpreis_cent, case when menge > 0 then round(betrag_cent / menge) end, betrag_cent)::int as preis_cent
+          from v_positionen
+         where ${bedingung(h, { ...f, von: undefined })} and betrag_cent > 0 and untergruppe <> 'Pfand'
+      ),
+      neu as (
+        select distinct on (artikel, haendler) * from p
+         where (${von}::date is null or datum >= ${von}::date)
+         order by artikel, haendler, datum desc, position_id desc
+      )
+      select n.artikel as name, nullif(n.haendler, '') as haendler, n.untergruppe, n.farbe, n.einheit,
+             to_char(n.datum, 'YYYY-MM-DD') as datum, n.preis_cent,
+             to_char(a.datum, 'YYYY-MM-DD') as alt_datum, a.preis_cent as alt_cent
+        from neu n cross join lateral (
+          select a.datum, a.preis_cent from p a
+           where a.artikel = n.artikel and a.haendler = n.haendler and a.datum < n.datum
+             and a.einheit is not distinct from n.einheit
+           order by (a.datum < ${von}::date) desc nulls last,
+                    case when a.datum < ${von}::date then a.datum end desc nulls last,
+                    a.datum, a.position_id
+           limit 1) a
+       where a.preis_cent > 0 and a.preis_cent <> n.preis_cent`;
+    const alle = zeilen.map((z) => ({ ...z, prozent: ((z.preis_cent - z.alt_cent) / z.alt_cent) * 100 }));
+    const groesste = (liste: typeof alle) =>
+      liste
+        .sort((a, b) => Math.abs(b.prozent) - Math.abs(a.prozent) || Math.abs(b.preis_cent - b.alt_cent) - Math.abs(a.preis_cent - a.alt_cent))
+        .slice(0, 100);
+    const teurer = alle.filter((z) => z.prozent > 0);
+    const guenstiger = alle.filter((z) => z.prozent < 0);
+    return { teurer: groesste(teurer), guenstiger: groesste(guenstiger), teurer_gesamt: teurer.length, guenstiger_gesamt: guenstiger.length };
+  });
+
   app.get<{ Querystring: Filter & { suche?: string } }>("/api/artikel", async (req) => {
     const h = zugriff(req, "bons_sehen");
     const suche = req.query.suche ? `%${req.query.suche}%` : null;

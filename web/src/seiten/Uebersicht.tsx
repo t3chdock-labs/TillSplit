@@ -4,6 +4,7 @@ import { Farbpunkt, Kopf, Leer, useDaten } from "../komponenten/Bausteine";
 import { Diagramm, themaFarben } from "../komponenten/Diagramm";
 import { useHochladen } from "../komponenten/Hochladen";
 import { PostenListe } from "../komponenten/PostenListe";
+import { Preisaenderungen } from "../komponenten/Preisaenderungen";
 import { Symbol } from "../komponenten/Symbol";
 import { euro, euroGerundet, iso, wochentage } from "../format";
 import {
@@ -104,7 +105,7 @@ export function Uebersicht() {
   const setHaupt = (name: string | null) => (setHauptRoh(name), setUnter(null));
   const { auswaehlen } = useHochladen();
   // Detailliste: die einzelnen Posten hinter einem Balken/Eintrag, mit Link auf den Bon
-  const [detail, setDetail] = useState<{ titel: string; filter: Record<string, string> } | null>(null);
+  const [detail, setDetail] = useState<{ titel: string; unter?: string; filter: Record<string, string> } | null>(null);
   // Filter auf ein Actual-Konto (nur Bons, die diesem Konto zugeordnet sind); die Wahl merkt sich das Gerät
   const { daten: konten, fehler: kontenFehler } = useDaten<{ id: string; name: string; budget_name: string | null; bons: number }[]>("/api/auswertung/konten");
   const [kontoWahl, setKontoWahl] = useState<string | null>(() => {
@@ -157,6 +158,16 @@ export function Uebersicht() {
     if (konto) p.set("konto", konto);
     return `/api/auswertung?${p}`;
   }, [bereich, raster, haupt, unter, konto]);
+  // Preisänderungen: gleicher Zeitraum und Filter, aber ohne Raster
+  const preisAbfrage = useMemo(() => {
+    const p = new URLSearchParams();
+    if (bereich.von) p.set("von", bereich.von);
+    if (bereich.bis) p.set("bis", bereich.bis);
+    if (haupt) p.set("haupt", haupt);
+    if (unter) p.set("unter", unter);
+    if (konto) p.set("konto", konto);
+    return p.toString();
+  }, [bereich, haupt, unter, konto]);
   // erst laden, wenn feststeht, ob ein gemerktes Konto noch gilt (sonst zweimal laden)
   const bereit = konten != null || kontenFehler != null || kontoWahl == null;
   const { daten, fehler } = useDaten<Auswertung>(bereit ? pfad : null);
@@ -513,10 +524,27 @@ export function Uebersicht() {
                 </Abschnitt>
               </div>
             </div>
+
+            <Preisaenderungen
+              abfrage={preisAbfrage}
+              // alle Käufe des Artikels in diesem Geschäft bis zum Ende des Zeitraums – der alte Preis liegt meist davor
+              onWahl={(p) =>
+                setDetail({
+                  titel: p.name,
+                  unter: p.haendler ? t("Alle Käufe bei {name}", { name: p.haendler }) : t("Alle Käufe"),
+                  filter: {
+                    artikel: p.name,
+                    ...(p.haendler ? { haendler: p.haendler } : {}),
+                    ...(bereich.bis ? { bis: bereich.bis } : {}),
+                    ...(konto ? { konto } : {}),
+                  },
+                })
+              }
+            />
           </div>
         )
       )}
-      {detail && <PostenListe titel={detail.titel} unter={titelVon(ansicht, anker, bereich)} filter={detail.filter} onSchliessen={() => setDetail(null)} />}
+      {detail && <PostenListe titel={detail.titel} unter={detail.unter ?? titelVon(ansicht, anker, bereich)} filter={detail.filter} onSchliessen={() => setDetail(null)} />}
     </>
   );
 }

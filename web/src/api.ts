@@ -73,6 +73,9 @@ export type BonListeneintrag = {
   unsicher?: number;
   /** gehört zu einer Sammelbuchung (mehrere Bons, eine Abbuchung) */
   sammel?: boolean;
+  /** Erstattung (Geld zurück, negative Beträge) und der Bon des Kaufs, falls verknüpft */
+  erstattung?: boolean;
+  erstattung_von?: number | null;
 };
 
 export type Position = {
@@ -140,6 +143,24 @@ export type Bon = {
   /** Sammelbuchung: alle Bons derselben Abbuchung (einschließlich dieses Bons) */
   sammel?: boolean;
   sammel_bons?: SammelBon[];
+  /** Erstattung (Geld zurück, negative Beträge) */
+  erstattung?: boolean;
+  erstattung_von?: number | null;
+  bestellnummer?: string | null;
+  /** Erstattung: der Bon des Kaufs bzw. – solange keiner verknüpft ist – mögliche Käufe */
+  ursprung?: BonKurz | null;
+  ursprung_kandidaten?: UrsprungKandidat[];
+  /** Kauf: die Erstattungen zu diesem Bon */
+  erstattungen?: BonKurz[];
+};
+
+export type BonKurz = { id: number; datum: string | null; summe_cent: number | null; status: BonStatus; haendler: string | null };
+export type UrsprungKandidat = {
+  id: number;
+  datum: string | null;
+  summe_cent: number;
+  haendler: string | null;
+  treffer: "bestellnummer" | "positionen" | "summe" | null;
 };
 
 export type SammelBon = { id: number; datum: string | null; summe_cent: number; haendler: string | null };

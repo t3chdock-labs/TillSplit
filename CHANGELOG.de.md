@@ -5,6 +5,21 @@
 Alle wichtigen Änderungen an TillSplit. Die Versionen folgen [Semantic Versioning](https://semver.org/lang/de/);
 Docker-Images: `t3chdocklabs/tillsplit:<version>` und `ghcr.io/t3chdock-labs/tillsplit:<version>`.
 
+## [0.1.4] – 2026-11-13
+
+### Neu
+- **Erstattung:** Rücksendungen verrechnen. Am gekauften Bon „Rückgabe erfassen“ wählen und die zurückgegebenen
+  Positionen ankreuzen (der erstattete Betrag ist änderbar) – oder den Erstattungsbeleg wie einen Bon hochladen.
+  Die Erstattung trägt negative Beträge, hängt am Kauf und wird der Gutschrift in Actual zugeordnet, auf dieselben
+  Bereiche wie der Kauf. Die Übersicht rechnet sie von den Ausgaben der Warengruppe ab.
+- **Kauf wird automatisch gefunden:** über die Bestellnummer, sonst über Geschäft und erstattete Positionen. Ist der
+  Kauf nicht eindeutig, zeigt die Erstattung die möglichen Bons zur Auswahl.
+- Die Gutschrift wird bis 45 Tage nach der Rückgabe gesucht; späte Geldeingänge nur, wenn der Empfänger zum
+  Geschäft passt. Dieselbe Rückgabe doppelt (von Hand und als Beleg) wird als mögliches Duplikat markiert.
+- **Preisänderungen:** Die Übersicht zeigt unten, was teurer und was günstiger geworden ist – je Liste die 100
+  größten Änderungen in Prozent. Verglichen wird der letzte Preis im Zeitraum mit dem Preis davor, je Artikel und
+  Geschäft. Ein Klick zeigt alle Käufe des Artikels in diesem Geschäft.
+
 ## [0.1.3] – 2026-11-11
 
 ### Neu
@@ -61,6 +76,7 @@ Docker-Images: `t3chdocklabs/tillsplit:<version>` und `ghcr.io/t3chdock-labs/til
 
 Erste öffentliche Version.
 
+[0.1.4]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.0...v0.1.1

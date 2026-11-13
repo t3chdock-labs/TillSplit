@@ -331,6 +331,14 @@ export function Bons() {
                         {t("Sammelbuchung")}
                       </span>
                     )}
+                    {b.erstattung && (
+                      <span
+                        className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-gut"
+                        title={b.erstattung_von ? t("Erstattung zu Bon {nr}", { nr: b.erstattung_von }) : t("Geld zurück – noch keinem Kauf zugeordnet")}
+                      >
+                        {t("Erstattung")}
+                      </span>
+                    )}
                     {b.dublette_von && (
                       <span className="shrink-0 rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-fehler">{t("Doppelt?")}</span>
                     )}
@@ -342,7 +350,7 @@ export function Bons() {
                     {abweichung && <span className="ml-2 text-warnung">{t("Summe weicht ab")}</span>}
                   </div>
                 </div>
-                <div className="text-right font-semibold">{euro(b.summe_cent)}</div>
+                <div className={`text-right font-semibold ${b.erstattung ? "text-gut" : ""}`}>{euro(b.summe_cent)}</div>
                 {!auswahl && <Symbol name="weiter" className="size-4 text-text-3" />}
               </>
             );

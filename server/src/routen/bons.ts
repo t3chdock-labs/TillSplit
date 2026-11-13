@@ -30,6 +30,7 @@ import { bonKosten, kiEinstellung, kostenPruefen, waehrungMitKurs } from "../ki/
 import { CLAUDE_MODELLE, kostenSchaetzen } from "../ki/kosten.js";
 import { regelLernen } from "../regeln.js";
 import { duplikatPruefen, einreihen, haendlerFinden, sorteSaeubern } from "../verarbeitung.js";
+import { alsErstattungMarkieren, rueckgabeAnlegen, ursprungKandidaten, ursprungSetzen, ursprungSuchen } from "../erstattung.js";
 
 type Vorgabe = { zahlung?: "bar" | "karte"; konto?: string };
 
@@ -157,7 +158,7 @@ export async function bonRouten(app: FastifyInstance) {
     const zeilen = await sql`
       select b.id, b.status, b.fehler, to_char(b.datum, 'YYYY-MM-DD') as datum, b.uhrzeit, b.summe_cent,
              b.datei_mime, left(b.datei_sha256, 16) as datei_version, b.gegenpruefung, b.erstellt_am, h.name as haendler, b.zahlung, b.karte_endziffern, b.abgleich_hinweis,
-             u.name as hochgeladen_von, b.dublette_von, b.sammel,
+             u.name as hochgeladen_von, b.dublette_von, b.sammel, b.erstattung, b.erstattung_von,
              count(p.id)::int as anzahl_positionen,
              count(p.id) filter (where p.gruppe_id is null)::int as ohne_gruppe,
              count(p.id) filter (where p.unsicher)::int as unsicher,
@@ -192,9 +193,20 @@ export async function bonRouten(app: FastifyInstance) {
              b.zahlung, b.zahlung_quelle, b.karte_endziffern, b.actual_konto_id, b.konto_quelle,
              b.abgleich_hinweis, b.abgleich_am, u.name as hochgeladen_von,
              b.ki_eingabe_tokens, b.ki_ausgabe_tokens, b.ki_cache_tokens, b.ki_kosten_usd::float as ki_kosten_usd, b.ki_sekunden::float as ki_sekunden,
-             b.ki_summe_passt, b.dublette_von, b.sammel
+             b.ki_summe_passt, b.dublette_von, b.sammel, b.erstattung, b.erstattung_von, b.bestellnummer
         from bons b left join haendler h on h.id = b.haendler_id left join benutzer u on u.id = b.hochgeladen_von
        where b.id = ${id} and b.haushalt_id = ${h}`;
+    // Erstattung: der gekaufte Bon bzw. – solange keiner verknüpft ist – die möglichen Käufe zur Auswahl
+    const kurz = sql`b.id, to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, b.status, h.name as haendler`;
+    const [ursprung] = bon?.erstattung_von
+      ? await sql`select ${kurz} from bons b left join haendler h on h.id = b.haendler_id where b.id = ${bon.erstattung_von} and b.haushalt_id = ${h}`
+      : [];
+    const ursprung_kandidaten = bon?.erstattung && !ursprung && bon.status !== "gebucht" ? await ursprungKandidaten(h, id) : [];
+    // Kauf: die Erstattungen, die an diesem Bon hängen
+    const erstattungen = bon && !bon.erstattung
+      ? await sql`select ${kurz} from bons b left join haendler h on h.id = b.haendler_id
+                   where b.erstattung_von = ${id} and b.haushalt_id = ${h} and b.erstattung order by b.datum, b.id`
+      : [];
     // Sammelbuchung: die anderen Bons derselben Abbuchung
     const sammel_bons = bon?.sammel
       ? await sql`
@@ -228,7 +240,8 @@ export async function bonRouten(app: FastifyInstance) {
       ...bon,
       fehler: bon.fehler && t(bon.fehler),
       abgleich_hinweis: bon.abgleich_hinweis && t(bon.abgleich_hinweis),
-      ki_kosten: await bonKosten(id, waehrung), positionen, sammel_bons, naechster_offen: nachbarn.naechster_offen, nachlesen };
+      ki_kosten: await bonKosten(id, waehrung), positionen, sammel_bons, ursprung: ursprung ?? null, ursprung_kandidaten, erstattungen,
+      naechster_offen: nachbarn.naechster_offen, nachlesen };
   });
 
   app.get<{ Params: { id: string }; Querystring: { v?: string } }>("/api/bons/:id/datei", async (req, antwort) => {
@@ -357,6 +370,8 @@ export async function bonRouten(app: FastifyInstance) {
                 on conflict (haushalt_id, endziffern) do update set actual_konto_id = excluded.actual_konto_id`;
     }
 
+    // Erstattung ohne Ursprungsbon: mit den korrigierten Angaben erneut suchen
+    await ursprungSuchen(h, id).catch((e) => console.warn(`Bon ${id}: Ursprungsbon nicht gesucht:`, (e as Error).message));
     // korrigierte Angaben können ein Duplikat erst sichtbar machen (oder auflösen)
     await duplikatPruefen(id);
     // korrigiertes Geschäft / Summe gegen den gespeicherten Text der Gegenprüfung halten
@@ -420,6 +435,9 @@ export async function bonRouten(app: FastifyInstance) {
         throw httpFehler(400, (e as Error).message);
       }
     }
+    // von Hand erfasste Rückgabe: das Bild ist nur eine Kopie des Kaufbelegs, Neu-Lesen würde den Kauf eintragen
+    const [hand] = await sql`select 1 from bons where id = ${id} and erstattung and ki_modell is null`;
+    if (hand) throw httpFehler(400, t("Diese Rückgabe wurde von Hand erfasst – ihr Bild ist der Kaufbeleg und kann nicht neu gelesen werden"));
     await sql`update bons set status = 'neu', fehler = null where id = ${id} and haushalt_id = ${h}`;
     const anbieter = (["claude", "ollama", "tesseract"] as const).find((a) => a === req.body?.anbieter);
     einreihen(id, anbieter, modell);
@@ -476,6 +494,34 @@ export async function bonRouten(app: FastifyInstance) {
       return { ok: true };
     },
   );
+
+  // Erstattung: Rückgabe am gekauften Bon erfassen (ohne eigenen Beleg)
+  const erstattungFehler = (e: Error) => {
+    throw httpFehler(400, e.message);
+  };
+  app.post<{ Params: { id: string }; Body: { datum?: string | null; positionen?: { id: number; betrag_cent: number }[] } }>(
+    "/api/bons/:id/rueckgabe",
+    async (req) => {
+      const id = idVon(req.params.id);
+      const h = await bonBearbeitbar(req, id);
+      return rueckgabeAnlegen(h, req.nutzer!.id, id, req.body ?? {}).catch(erstattungFehler);
+    },
+  );
+  // Ursprungsbon einer Erstattung von Hand wählen (ursprungId) oder die Verknüpfung lösen (null)
+  app.post<{ Params: { id: string }; Body: { ursprungId?: number | null } }>("/api/bons/:id/ursprung", async (req) => {
+    const id = idVon(req.params.id);
+    const h = await bonBearbeitbar(req, id);
+    const ursprung = req.body?.ursprungId == null ? null : idVon(String(req.body.ursprungId));
+    await ursprungSetzen(h, id, ursprung).catch(erstattungFehler);
+    return { ok: true };
+  });
+  // Beleg als Erstattung kennzeichnen bzw. die Kennzeichnung zurücknehmen
+  app.post<{ Params: { id: string }; Body: { erstattung?: boolean } }>("/api/bons/:id/erstattung", async (req) => {
+    const id = idVon(req.params.id);
+    const h = await bonBearbeitbar(req, id);
+    await alsErstattungMarkieren(h, id, req.body?.erstattung !== false).catch(erstattungFehler);
+    return { ok: true };
+  });
 
   // Sammelbuchung: mehrere Bons, eine Abbuchung (z. B. mehrere Amazon-Rechnungen)
   const bonListe = (wert: unknown) => {

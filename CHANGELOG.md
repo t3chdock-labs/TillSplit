@@ -5,6 +5,21 @@
 All notable changes to TillSplit. Versions follow [Semantic Versioning](https://semver.org/);
 Docker images: `t3chdocklabs/tillsplit:<version>` and `ghcr.io/t3chdock-labs/tillsplit:<version>`.
 
+## [0.1.4] – 2026-11-13
+
+### Added
+- **Refunds:** account for returned goods. On the purchase receipt choose "Record return" and tick the returned
+  items (the refunded amount can be changed) – or upload the refund document like a receipt. The refund carries
+  negative amounts, is linked to the purchase and is assigned to the credit in Actual, to the same areas as the
+  purchase. The overview deducts it from the spending of the product group.
+- **The purchase is found automatically:** by order number, otherwise by store and refunded items. If the purchase
+  is not unambiguous, the refund lists the possible receipts to choose from.
+- The credit is searched for up to 45 days after the return; late credits only if the payee matches the store.
+  The same return recorded twice (by hand and as a document) is flagged as a possible duplicate.
+- **Price changes:** the bottom of the overview shows what has become more expensive and what has become cheaper –
+  the 100 largest changes in percent per list. The last price in the period is compared with the price before, per
+  item and store. A click shows all purchases of the item in that store.
+
 ## [0.1.3] – 2026-11-11
 
 ### Added
@@ -61,6 +76,7 @@ Docker images: `t3chdocklabs/tillsplit:<version>` and `ghcr.io/t3chdock-labs/til
 
 First public release.
 
+[0.1.4]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.0...v0.1.1

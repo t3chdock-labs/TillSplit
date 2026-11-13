@@ -1,6 +1,6 @@
 {
   "name": "tillsplit-server",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "description": "TillSplit – Kassenbons erfassen, auswerten und in Actual Budget aufteilen",

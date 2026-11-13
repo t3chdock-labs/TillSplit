@@ -245,16 +245,21 @@ async function suchKonten(haushaltId: number): Promise<{ id: string; name: strin
   return einstellung.konten.length ? alle.filter((k) => einstellung.konten.includes(k.id)) : alle;
 }
 
-/** Passende Abbuchungen für einen Bon: gleicher Betrag, wenige Tage um das Kaufdatum. */
+/** So lange nach dem Datum der Erstattung wird die Gutschrift in Actual gesucht */
+const ERSTATTUNG_TAGE = 45;
+
+/** Passende Abbuchungen für einen Bon: gleicher Betrag, wenige Tage um das Kaufdatum (Erstattung: Geldeingang, bis 45 Tage danach). */
 export async function kandidatenSuchen(haushaltId: number, bonId: number) {
-  const [bon] = await sql<{ datum: string | null; summe_cent: number | null; haendler: string | null; konto: string | null }[]>`
-    select to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, h.name as haendler, b.actual_konto_id as konto
+  const [bon] = await sql<{ datum: string | null; summe_cent: number | null; haendler: string | null; konto: string | null; erstattung: boolean }[]>`
+    select to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, h.name as haendler, b.actual_konto_id as konto, b.erstattung
       from bons b left join haendler h on h.id = b.haendler_id where b.id = ${bonId} and b.haushalt_id = ${haushaltId}`;
   if (!bon?.datum || bon.summe_cent == null) return [];
   const treffer = await abbuchungenSuchen(haushaltId, {
+    // Erstattung: die Summe ist negativ, es passt also nur ein Geldeingang in gleicher Höhe
     passt: (cent) => cent === bon.summe_cent,
     von: tagVerschieben(bon.datum, -4),
-    bis: tagVerschieben(bon.datum, 10),
+    // eine Gutschrift lässt oft Wochen auf sich warten
+    bis: tagVerschieben(bon.datum, bon.erstattung ? ERSTATTUNG_TAGE : 10),
     bezug: bon.datum,
     haendler: bon.haendler ? [bon.haendler] : [],
     konto: bon.konto,
@@ -603,8 +608,8 @@ export type AbgleichErgebnis = { ergebnis: "gebucht" | "wartet" | "auswahl" | "k
  * - Karte: genau eine passende Abbuchung -> aufteilen; keine -> auf den nächsten Bankimport warten
  */
 export async function abgleichen(haushaltId: number, bonId: number): Promise<AbgleichErgebnis> {
-  const [bon] = await sql<{ status: string; zahlung: string; actual_konto_id: string | null; dublette_von: number | null }[]>`
-    select status, zahlung, actual_konto_id, dublette_von from bons where id = ${bonId} and haushalt_id = ${haushaltId}`;
+  const [bon] = await sql<{ status: string; zahlung: string; actual_konto_id: string | null; dublette_von: number | null; erstattung: boolean }[]>`
+    select status, zahlung, actual_konto_id, dublette_von, erstattung from bons where id = ${bonId} and haushalt_id = ${haushaltId}`;
   if (!bon || bon.status === "gebucht") return { ergebnis: "gebucht", text: t("Bereits gebucht") };
   // mögliches Duplikat nie buchen, sonst landet der Einkauf doppelt in Actual
   if (bon.dublette_von) {
@@ -634,11 +639,16 @@ export async function abgleichen(haushaltId: number, bonId: number): Promise<Abg
     await barBuchen(haushaltId, bonId, konto);
     return {
       ergebnis: "gebucht",
-      text: einstellung.bargeld === "umbuchen" ? t("Von der Bargeld-Kategorie auf die Bereiche umgebucht") : t("Als Barausgabe in Actual gebucht"),
+      text: bon.erstattung
+        ? t("Als Bar-Erstattung in Actual gebucht")
+        : einstellung.bargeld === "umbuchen" ? t("Von der Bargeld-Kategorie auf die Bereiche umgebucht") : t("Als Barausgabe in Actual gebucht"),
     };
   }
 
-  const kandidaten = (await kandidatenSuchen(haushaltId, bonId)).filter((k) => !k.aufgeteilt && Math.abs(k.abstand_tage) <= 7);
+  // Erstattung: späte Gutschriften nur automatisch nehmen, wenn der Empfänger zum Geschäft passt
+  const kandidaten = (await kandidatenSuchen(haushaltId, bonId)).filter(
+    (k) => !k.aufgeteilt && (Math.abs(k.abstand_tage) <= 7 || (bon.erstattung && k.name_passt)),
+  );
   let wahl = kandidaten.length === 1 ? kandidaten[0] : undefined;
   // mehrere gleich hohe Abbuchungen: eindeutig nur, wenn genau eine zum Geschäft passt
   if (!wahl && kandidaten.length > 1) {
@@ -648,14 +658,23 @@ export async function abgleichen(haushaltId: number, bonId: number): Promise<Abg
 
   if (wahl) {
     await aufBuchungVerteilen(haushaltId, bonId, wahl.id, wahl.budget);
-    return { ergebnis: "gebucht", text: t("Abbuchung vom {datum} ({konto}) aufgeteilt", { datum: wahl.datum, konto: wahl.konto }) };
+    return {
+      ergebnis: "gebucht",
+      text: bon.erstattung
+        ? t("Gutschrift vom {datum} ({konto}) zugeordnet", { datum: wahl.datum, konto: wahl.konto })
+        : t("Abbuchung vom {datum} ({konto}) aufgeteilt", { datum: wahl.datum, konto: wahl.konto }),
+    };
   }
   if (kandidaten.length > 1) {
-    const text = t("{n} mögliche Abbuchungen gefunden – bitte die richtige auswählen.", { n: kandidaten.length });
+    const text = bon.erstattung
+      ? t("{n} mögliche Gutschriften gefunden – bitte die richtige auswählen.", { n: kandidaten.length })
+      : t("{n} mögliche Abbuchungen gefunden – bitte die richtige auswählen.", { n: kandidaten.length });
     await hinweis("geprueft", text);
     return { ergebnis: "auswahl", text };
   }
-  const text = t("Noch keine passende Abbuchung in Actual – wird nach dem nächsten Bankimport automatisch zugeordnet.");
+  const text = bon.erstattung
+    ? t("Noch keine passende Gutschrift in Actual – wird nach dem nächsten Bankimport automatisch zugeordnet.")
+    : t("Noch keine passende Abbuchung in Actual – wird nach dem nächsten Bankimport automatisch zugeordnet.");
   await hinweis("wartet", text);
   return { ergebnis: "wartet", text };
 }

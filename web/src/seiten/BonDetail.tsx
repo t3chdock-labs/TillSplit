@@ -5,6 +5,7 @@ import { Farbpunkt, Hinweis, KontoOptionen, StatusMarke, useDaten } from "../kom
 import { GruppenWahl } from "../komponenten/GruppenWahl";
 import { PdfAnsicht } from "../komponenten/PdfAnsicht";
 import { SammelBonListe } from "../komponenten/Sammelbuchung";
+import { ErstattungBereich } from "../komponenten/Erstattung";
 import { SortenWahl, type Sorte } from "../komponenten/SortenWahl";
 import { Symbol } from "../komponenten/Symbol";
 import { centAlsText, centAusText, datum, euro, geld, zahl, zahlungText } from "../format";
@@ -111,7 +112,9 @@ function ActualBereich({
         <Symbol name="link" className="size-4 text-akzent" />
         <h2 className="text-sm font-semibold">{t("An Actual übergeben")}</h2>
       </div>
-      <p className="mb-4 text-xs text-text-2">{t("Die Abbuchung wird in Actual nach Bereichen aufgeteilt.")}</p>
+      <p className="mb-4 text-xs text-text-2">
+        {bon.erstattung ? t("Die Gutschrift wird in Actual den Bereichen zugeordnet.") : t("Die Abbuchung wird in Actual nach Bereichen aufgeteilt.")}
+      </p>
 
       <div className="mb-4">
         <div className="flex h-2.5 overflow-hidden rounded-full">
@@ -179,12 +182,16 @@ function ActualBereich({
               </Hinweis>
             </div>
           )}
-          {laedt && <p className="text-sm text-text-2">{t("Suche passende Abbuchung …")}</p>}
+          {laedt && <p className="text-sm text-text-2">{bon.erstattung ? t("Suche passende Gutschrift …") : t("Suche passende Abbuchung …")}</p>}
           {fehler && <Hinweis art="warnung">{fehler}</Hinweis>}
           {kandidaten && kandidaten.length === 0 && (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-text-2">
-                {bon.actual_konto_id && kontoName(bon.actual_konto_id)
+                {bon.erstattung
+                  ? bon.actual_konto_id && kontoName(bon.actual_konto_id)
+                    ? t("Noch keine Gutschrift über {betrag} ab dem {datum} im Konto {konto} gefunden.", { betrag: euro(Math.abs(bon.summe_cent ?? 0)), datum: datum(bon.datum), konto: kontoName(bon.actual_konto_id) })
+                    : t("Noch keine Gutschrift über {betrag} ab dem {datum} gefunden.", { betrag: euro(Math.abs(bon.summe_cent ?? 0)), datum: datum(bon.datum) })
+                  : bon.actual_konto_id && kontoName(bon.actual_konto_id)
                   ? t("Keine Abbuchung über {betrag} um den {datum} im Konto {konto} gefunden.", { betrag: euro(bon.summe_cent), datum: datum(bon.datum), konto: kontoName(bon.actual_konto_id) })
                   : t("Keine Abbuchung über {betrag} um den {datum} gefunden.", { betrag: euro(bon.summe_cent), datum: datum(bon.datum) })}
               </p>
@@ -192,7 +199,9 @@ function ActualBereich({
                 <Symbol name="aktualisieren" className="size-4" /> {t("Erneut suchen")}
               </button>
               <p className="w-full text-xs text-text-3">
-                {t("Wurde der Bon mit anderen zusammen abgebucht (z. B. mehrere Amazon-Rechnungen)? In der Bon-Liste „Zusammen buchen“ wählen und die Bons ankreuzen.")}{" "}
+                {bon.erstattung
+                  ? t("Kommen mehrere Erstattungen als eine Gutschrift? In der Bon-Liste „Zusammen buchen“ wählen und die Erstattungen ankreuzen.")
+                  : t("Wurde der Bon mit anderen zusammen abgebucht (z. B. mehrere Amazon-Rechnungen)? In der Bon-Liste „Zusammen buchen“ wählen und die Bons ankreuzen.")}{" "}
                 <Link to="/bons?status=wartet" className="text-akzent hover:underline">{t("Zur Bon-Liste")}</Link>
               </p>
             </div>
@@ -219,13 +228,13 @@ function ActualBereich({
                 </label>
               ))}
               <button className="knopf-haupt mt-2 w-full" disabled={!gewaehlt || arbeitet} onClick={() => gewaehlt && buchen({ transaktionId: gewaehlt, budget: kandidaten.find((k) => k.id === gewaehlt)?.budget })}>
-                {arbeitet ? t("Wird übertragen …") : t("Abbuchung aufteilen")}
+                {arbeitet ? t("Wird übertragen …") : bon.erstattung ? t("Gutschrift zuordnen") : t("Abbuchung aufteilen")}
               </button>
             </div>
           )}
           {konten && konten.length > 0 && (
             <details className="mt-4 text-sm">
-              <summary className="cursor-pointer text-text-2 hover:text-text">{t("Bar bezahlt? Neue Buchung anlegen")}</summary>
+              <summary className="cursor-pointer text-text-2 hover:text-text">{bon.erstattung ? t("Bar erstattet? Neue Buchung anlegen") : t("Bar bezahlt? Neue Buchung anlegen")}</summary>
               <div className="mt-3 flex gap-2">
                 <select className="eingabe" value={neuKonto} onChange={(e) => setNeuKonto(e.target.value)}>
                   <option value="">{t("Konto wählen")}</option>
@@ -275,6 +284,14 @@ export function BonDetail() {
     setNotiz(bon.notiz ?? "");
     setZeilen(bon.positionen.map(zeileAus));
     setGeaendert(false);
+    // gerade aus einer Rückgabe angelegt: Ergebnis des Abgleichs einmal anzeigen
+    try {
+      const neu = JSON.parse(sessionStorage.getItem("tillsplit-rueckgabe") ?? "null") as { id: number; hinweis: string } | null;
+      if (neu) sessionStorage.removeItem("tillsplit-rueckgabe");
+      if (neu?.id === bon.id) setMeldung({ art: "gut", text: `${t("Rückgabe angelegt.")} ${neu.hinweis}` });
+    } catch {
+      // kein Sitzungsspeicher (privates Fenster): dann eben ohne Hinweis
+    }
   }, [bon]);
 
   const wirdGelesen = bon?.status === "neu" || bon?.status === "in_arbeit";
@@ -406,9 +423,12 @@ export function BonDetail() {
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <h1 className="truncate text-2xl font-semibold tracking-tight">{bon.haendler ?? t("Neuer Bon")}</h1>
           <StatusMarke status={bon.status} />
+          {bon.erstattung && (
+            <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-gut">{t("Erstattung")}</span>
+          )}
         </div>
         <div className="flex gap-2">
-          {bearbeiten && (
+          {bearbeiten && !(bon.erstattung && !bon.ki_modell) && (
           <details className="relative">
             <summary className="knopf-zweit list-none">
               <Symbol name="aktualisieren" className="size-4" /> {t("Neu lesen")}
@@ -502,6 +522,7 @@ export function BonDetail() {
         <div className="lg:sticky lg:top-6 lg:self-start">
           <Vorschau bon={bon} />
           <p className="mt-2 text-xs text-text-3">
+            {bon.erstattung && !bon.ki_modell && `${t("Von Hand erfasste Rückgabe – das Bild ist der Kaufbeleg.")} `}
             {bon.ki_modell && t("Gelesen mit {modell}", { modell: bon.ki_modell })} {bon.datei_pfad && !bon.datei_pfad.startsWith("eingang/") && `· ${t("Ablage: {pfad}", { pfad: bon.datei_pfad })}`}
           </p>
           {bon.pruef_text && (
@@ -526,7 +547,8 @@ export function BonDetail() {
           )}
         </div>
 
-        <div className="space-y-4">
+        {/* min-w-0: sonst macht eine lange, nicht umbrechende Zeile die ganze Spalte breiter als das Handy */}
+        <div className="min-w-0 space-y-4">
           {wirdGelesen && (
             <div className="karte flex items-center gap-3 p-5 text-sm">
               <span className="size-5 animate-spin rounded-full border-2 border-akzent border-t-transparent" />
@@ -542,6 +564,9 @@ export function BonDetail() {
             // kein <fieldset disabled>: Chrome zeigt Container-Abfragen (@container) darin teils mit Höhe 0 (Felder und
             // Positionen fehlten bis zum Neuladen). Ohne Bearbeitungsrecht sperrt „inert“ stattdessen alle Eingaben.
             <div inert={!bearbeiten} className={`min-w-0 space-y-4 ${bearbeiten ? "" : "opacity-80"}`}>
+              {bon.erstattung && !geaendert && (
+                <ErstattungBereich bon={bon} onGeaendert={neuLaden} onAngelegt={() => undefined} />
+              )}
               <section className="karte @container p-5">
                 <div className="grid grid-cols-2 gap-3 @lg:grid-cols-[minmax(0,1fr)_9.5rem_7rem]">
                 <label className="col-span-2 text-xs text-text-2 @lg:col-span-1">
@@ -730,7 +755,17 @@ export function BonDetail() {
               {meldung && <Hinweis art={meldung.art === "gut" ? "gut" : "fehler"}>{meldung.text}</Hinweis>}
 
               {bearbeiten && (bon.status === "geprueft" || bon.status === "wartet" || bon.status === "gebucht") && !geaendert && (
-                <ActualBereich key={`${bon.status}-${bon.actual_konto_id}-${bon.zahlung}`} bon={bon} konten={konten} aufteilung={aufteilung} onGebucht={neuLaden} />
+                <ActualBereich key={`${bon.status}-${bon.actual_konto_id}-${bon.zahlung}-${bon.summe_cent}`} bon={bon} konten={konten} aufteilung={aufteilung} onGebucht={neuLaden} />
+              )}
+              {bearbeiten && !bon.erstattung && !geaendert && bon.status !== "fehler" && (
+                <ErstattungBereich
+                  bon={bon}
+                  onGeaendert={neuLaden}
+                  onAngelegt={(neu, hinweis) => {
+                    if (hinweis) sessionStorage.setItem("tillsplit-rueckgabe", JSON.stringify({ id: neu, hinweis }));
+                    navigate(`/bons/${neu}`);
+                  }}
+                />
               )}
             </div>
           )}

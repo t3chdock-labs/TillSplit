@@ -9,6 +9,7 @@ import { erkennen, kiEinstellung, kostenPruefen, type KiAnbieter, type KiEingabe
 import { kostenSchaetzen, type KiVerbrauch } from "./ki/kosten.js";
 import type { BonErgebnis } from "./ki/schema.js";
 import { musterVon, regelnFinden, trefferZaehlen } from "./regeln.js";
+import { ursprungSuchen } from "./erstattung.js";
 
 const cent = (euro: number | null | undefined) => (euro == null ? null : Math.round(euro * 100));
 
@@ -61,6 +62,8 @@ function kiErgebnisBegrenzen<T extends BonErgebnis>(e: T): T {
     datum: datumOk ? e.datum : null,
     uhrzeit: e.uhrzeit && /^\d{1,2}:\d{2}/.test(e.uhrzeit) ? e.uhrzeit.slice(0, 5) : null,
     summe: betrag(e.summe),
+    erstattung: Boolean(e.erstattung),
+    bestellnummer: text(e.bestellnummer ?? null, 60)?.replace(/\s+/g, "") || null,
     zahlart: text(e.zahlart, 50),
     karte_endziffern: e.karte_endziffern?.replace(/\D/g, "").slice(-4) || null,
     positionen: e.positionen.slice(0, 300).map((p) => ({
@@ -73,6 +76,20 @@ function kiErgebnisBegrenzen<T extends BonErgebnis>(e: T): T {
       einzelpreis: p.einzelpreis != null ? betrag(p.einzelpreis) : null,
       betrag: betrag(p.betrag),
     })),
+  };
+}
+
+/**
+ * Erstattung einheitlich mit negativen Beträgen führen (Geld zurück) – gleich, ob der Beleg die Beträge
+ * mit oder ohne Minuszeichen druckt. Rabattzeilen innerhalb der Gutschrift drehen dabei mit.
+ */
+export function erstattungNormalisieren<T extends { erstattung: boolean; summe: number; positionen: { betrag: number; einzelpreis: number | null }[] }>(e: T): T {
+  if (!e.erstattung) return e;
+  const drehen = e.positionen.reduce((s, p) => s + p.betrag, 0) > 0;
+  return {
+    ...e,
+    summe: -Math.abs(e.summe),
+    positionen: drehen ? e.positionen.map((p) => ({ ...p, betrag: -p.betrag })) : e.positionen,
   };
 }
 
@@ -93,9 +110,11 @@ export async function duplikatPruefen(bonId: number): Promise<void> {
     update bons b set dublette_von = (
       select a.id from bons a
        where a.haushalt_id = b.haushalt_id and a.id <> b.id and a.id < b.id
-         and a.haendler_id = b.haendler_id and a.datum = b.datum and a.summe_cent = b.summe_cent
-         and (a.uhrzeit is null or b.uhrzeit is null or a.uhrzeit = b.uhrzeit)
-         and a.status <> 'fehler'
+         and a.summe_cent = b.summe_cent and a.status <> 'fehler'
+         and ((a.haendler_id = b.haendler_id and a.datum = b.datum
+               and (a.uhrzeit is null or b.uhrzeit is null or a.uhrzeit = b.uhrzeit))
+              -- dieselbe Rückgabe zweimal: von Hand erfasst und später die Gutschrift hochgeladen
+              or (a.erstattung and b.erstattung and a.erstattung_von = b.erstattung_von))
        order by a.id limit 1)
      where b.id = ${bonId} and not b.dublette_ok and b.datum is not null and b.summe_cent is not null`;
 }
@@ -116,10 +135,10 @@ async function aufrufMerken(
 async function bonVerarbeiten(bonId: number, anbieter?: KiAnbieter, zwischenspeichern = false, modellWahl?: string): Promise<boolean | null> {
   const [bon] = await sql<{
     haushalt_id: number; datei_pfad: string; datei_mime: string; status: string;
-    zahlung: string; zahlung_quelle: string; actual_konto_id: string | null; konto_quelle: string | null;
+    zahlung: string; zahlung_quelle: string; actual_konto_id: string | null; konto_quelle: string | null; erstattung: boolean;
   }[]>`
     update bons set status = 'in_arbeit', fehler = null, geaendert_am = now()
-     where id = ${bonId} returning haushalt_id, datei_pfad, datei_mime, status, zahlung, zahlung_quelle, actual_konto_id, konto_quelle`;
+     where id = ${bonId} returning haushalt_id, datei_pfad, datei_mime, status, zahlung, zahlung_quelle, actual_konto_id, konto_quelle, erstattung`;
   if (!bon) return null;
 
   const h = bon.haushalt_id;
@@ -168,7 +187,8 @@ async function bonVerarbeiten(bonId: number, anbieter?: KiAnbieter, zwischenspei
     );
     if (!ergebnis.ist_bon) throw new Error(t("Das Dokument sieht nicht wie ein Kassenbon aus"));
     // Antwort der KI nie ungeprüft übernehmen: Längen, Anzahl und Beträge begrenzen
-    ergebnis = kiErgebnisBegrenzen(ergebnis);
+    // von Hand als Erstattung markiert bleibt Erstattung, auch wenn die KI den Beleg anders einschätzt
+    ergebnis = erstattungNormalisieren({ ...kiErgebnisBegrenzen(ergebnis), erstattung: Boolean(ergebnis.erstattung) || bon.erstattung });
 
     const haendlerId = await haendlerFinden(ergebnis.haendler);
     const gruppeVonName = new Map(untergruppen.map((g) => [g.name, g.id]));
@@ -219,6 +239,7 @@ async function bonVerarbeiten(bonId: number, anbieter?: KiAnbieter, zwischenspei
           status = 'erkannt', haendler_id = ${haendlerId}, filiale = ${ergebnis.filiale}, datum = ${datum},
           uhrzeit = ${ergebnis.uhrzeit}, summe_cent = ${summeCent}, zahlart = ${ergebnis.zahlart},
           zahlung = ${zahlung}, karte_endziffern = ${endziffern}, actual_konto_id = ${konto}, konto_quelle = ${kontoQuelle},
+          erstattung = ${ergebnis.erstattung}, bestellnummer = ${ergebnis.bestellnummer},
           ki_anbieter = ${genutzt}, ki_modell = ${modell}, ki_rohdaten = ${tx.json(ergebnis as never)},
           ki_eingabe_tokens = ${verbrauch.eingabe + verbrauch.cacheGeschrieben}, ki_ausgabe_tokens = ${verbrauch.ausgabe},
           ki_cache_tokens = ${verbrauch.cacheGelesen}, ki_sekunden = ${sekunden}, ki_summe_passt = ${summePasst(ergebnis)},
@@ -232,6 +253,8 @@ async function bonVerarbeiten(bonId: number, anbieter?: KiAnbieter, zwischenspei
       const pruefText = await textFuerPruefung(eingabe);
       await sql`update bons set pruef_text = ${pruefText}, gegenpruefung = ${bewerten(pruefText, ergebnis.haendler, summeCent, await bekannteHaendler())} where id = ${bonId}`;
     }
+    // Erstattung: den ursprünglichen Bon suchen (nur verknüpfen, wenn er eindeutig ist)
+    if (ergebnis.erstattung) await ursprungSuchen(h, bonId).catch((e) => console.warn(`Bon ${bonId}: Ursprungsbon nicht gesucht:`, (e as Error).message));
     await duplikatPruefen(bonId);
     // nach der Vorlage des Haushalts ablegen (aus dem Eingang in die Bon-Ablage)
     await bonAblegen(bonId);

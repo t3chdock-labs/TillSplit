@@ -6,6 +6,13 @@ export function bonSchema(untergruppen: string[]) {
   const gruppe = untergruppen.length > 0 ? z.enum(untergruppen as [string, ...string[]]) : z.string();
   return z.object({
     ist_bon: z.boolean().describe("false, wenn das Dokument kein Kassenbon/Einkaufsbeleg ist"),
+    erstattung: z
+      .boolean()
+      .describe("true, wenn der Beleg eine Gutschrift, Erstattung, Rückgabe oder Retoure ist (der Kunde bekommt Geld zurück), sonst false"),
+    bestellnummer: z
+      .string()
+      .nullable()
+      .describe("Bestell- oder Auftragsnummer bei Onlinebestellungen (z. B. '302-1234567-1234567'), bei einer Gutschrift die der ursprünglichen Bestellung; sonst null"),
     haendler: z.string().describe("Geschäft/Kette ohne Rechtsform, z. B. 'REWE', 'dm', 'OBI', 'Lidl'"),
     filiale: z.string().nullable().describe("Ort oder Adresse der Filiale"),
     datum: z.string().nullable().describe("Kaufdatum als JJJJ-MM-TT"),
@@ -56,6 +63,7 @@ Regeln:
 - Mengenzeilen wie "2 x 1,29" gehören zur Position darüber/darunter: menge=2, einzelpreis=1.29, betrag=2.58. Gewichtszeilen ("0,512 kg x 2,99 EUR/kg") ebenso.
 - Rabatte, Coupons und Preisvorteile als eigene Position mit negativem Betrag erfassen und derselben Gruppe zuordnen wie den rabattierten Artikel.
 - Pfand als eigene Position (Gruppe "${pfand}"), Leergutbons/Pfandrückgabe negativ.
+- Gutschrift, Erstattungs-, Rückgabe- oder Retourenbeleg (der Kunde bekommt Geld zurück): erstattung=true. Erfasse dann die erstatteten Artikel als Positionen und ordne sie der Gruppe zu, in die der Artikel beim Kauf gehört; datum ist das Datum der Gutschrift.
 - Keine Zwischensummen, MwSt-Aufstellungen, Zahlungszeilen oder Bonus-/Payback-Punkte als Positionen.
 - Die Summe der Positionen soll der Gesamtsumme entsprechen.
 - Zahlung: Bei Kartenzahlung stehen auf dem Bon oft Kartentyp und maskierte Kartennummer – gib davon nur die letzten 4 Ziffern zurück, niemals mehr.
