@@ -910,5 +910,15 @@
   "Weniger anzeigen": "Show less",
   "Alle {n} anzeigen": "Show all {n}",
   "Alle Käufe bei {name}": "All purchases at {name}",
-  "Alle Käufe": "All purchases"
+  "Alle Käufe": "All purchases",
+  "Kartenabrechnung {karte}": "Card statement {karte}",
+  "Abbuchung über {betrag} vom {datum} ({konto}, {empfaenger}) – das sind diese {n} Rechnungen vom {von} bis {bis}.": "Debit of {betrag} on {datum} ({konto}, {empfaenger}) – these are the {n} invoices from {von} to {bis}.",
+  "Abbuchung über {betrag} vom {datum} ({konto}, {empfaenger}) – keine Auswahl der offenen Rechnungen ergibt genau diesen Betrag.": "Debit of {betrag} on {datum} ({konto}, {empfaenger}) – no selection of the open invoices adds up to exactly this amount.",
+  "Am nächsten kommen diese {n} Rechnungen mit {summe} – es fehlen {differenz}. Fehlt eine Rechnung? Lade sie hoch, dann wird neu gesucht.": "Closest are these {n} invoices totalling {summe} – {differenz} is missing. Is an invoice missing? Upload it and the search runs again.",
+  "Am nächsten kommen diese {n} Rechnungen mit {summe} – das sind {differenz} zu viel. Ist eine Rechnung doppelt oder wurde etwas erstattet?": "Closest are these {n} invoices totalling {summe} – that is {differenz} too much. Is an invoice duplicated or was something refunded?",
+  "Ausblenden": "Hide",
+  "Kreditkarte mit Sammelabbuchung": "Credit card with combined debit",
+  "Die Umsätze werden gesammelt vom gewählten Konto abgebucht (z. B. Amazon Visa). TillSplit sucht dann nicht jede Rechnung einzeln, sondern ordnet jede Abbuchung den offenen Rechnungen dieser Karte zu – egal, an welchem Tag abgebucht wird.": "Purchases are debited together from the selected account (e.g. Amazon Visa). Instead of matching each invoice on its own, TillSplit assigns every debit to the open invoices of this card – whatever day it is debited.",
+  "Empfänger der Abbuchung (Suchwörter, durch Komma getrennt)": "Payee of the debit (search words, separated by commas)",
+  "Leer lassen sucht nach Openbank und Zinia. Trag hier ein, was in deinem Kontoauszug bei der Kartenabbuchung steht – nicht nur „Amazon“, das passt auch auf normale Amazon-Lastschriften. Wichtig: Die Karte muss den vollen Betrag abbuchen – bei Teilzahlung passt die Summe nie.": "Leave empty to search for Openbank and Zinia. Enter what your bank statement shows for the card debit – not just \"Amazon\", which also matches ordinary Amazon direct debits. Important: the card must debit the full amount – with partial payment the total never matches."
 }

@@ -5,6 +5,22 @@
 All notable changes to TillSplit. Versions follow [Semantic Versioning](https://semver.org/);
 Docker images: `t3chdocklabs/tillsplit:<version>` and `ghcr.io/t3chdock-labs/tillsplit:<version>`.
 
+## [0.1.6] – 2026-11-28
+
+### Added
+- **Credit card with combined debit** (e.g. Amazon Visa): a card can be marked as such under *Cards → accounts*.
+  Its invoices are then not matched one by one but wait for the next card debit. When it shows up on the account,
+  TillSplit assigns the card's open invoices to it, oldest first, until the total matches exactly – whatever day it is
+  debited. A single invoice missing from the sequence is detected. Booking happens after confirmation, split by the
+  areas of all invoices.
+- If no selection matches exactly, the card statement shows the closest one with the difference ("5.00 € missing").
+  Once the missing invoice is uploaded, the search runs again.
+- Manual "Book together" searches up to 60 days after the last invoice for invoices of such a card.
+
+### Fixed
+- **Combined booking:** while a large receipt from the same store was open, no combined booking was suggested for
+  smaller debits.
+
 ## [0.1.5] – 2026-11-27
 
 ### Fixed
@@ -82,6 +98,7 @@ Docker images: `t3chdocklabs/tillsplit:<version>` and `ghcr.io/t3chdock-labs/til
 
 First public release.
 
+[0.1.6]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.2...v0.1.3

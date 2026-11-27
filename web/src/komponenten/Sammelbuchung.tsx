@@ -53,34 +53,71 @@ export function SammelVorschlaege({ neuLadenZaehler, onGebucht }: { neuLadenZaeh
   if (!daten?.length) return null;
   return (
     <div className="mb-4 space-y-3">
-      {daten.map((v) => (
-        <section key={v.id} className="karte border-akzent/40 p-4">
-          <div className="mb-2 flex items-start gap-2">
-            <Symbol name="link" className="mt-0.5 size-4 shrink-0 text-akzent" />
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold">{t("Mögliche Sammelbuchung")}</h2>
-              <p className="text-xs text-text-2">
-                {t("{n} Bons ergeben zusammen {betrag} – genau wie die Abbuchung vom {datum} ({konto}, {empfaenger}).", {
-                  n: v.bons.length,
-                  betrag: euro(v.betrag_cent),
-                  datum: datum(v.datum),
-                  konto: v.konto,
-                  empfaenger: v.empfaenger || t("Ohne Empfänger"),
-                })}
-              </p>
+      {daten.map((v) => {
+        const karte = v.karte ? (v.karte_name ? `${v.karte_name} (•••• ${v.karte})` : `•••• ${v.karte}`) : null;
+        const passt = v.differenz_cent === 0;
+        const summe = v.bons.reduce((s, b) => s + b.summe_cent, 0);
+        return (
+          <section key={v.id} className={`karte p-4 ${passt ? "border-akzent/40" : "border-amber-500/40"}`}>
+            <div className="mb-2 flex items-start gap-2">
+              <Symbol name="link" className={`mt-0.5 size-4 shrink-0 ${passt ? "text-akzent" : "text-warnung"}`} />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-semibold">{karte ? t("Kartenabrechnung {karte}", { karte }) : t("Mögliche Sammelbuchung")}</h2>
+                <p className="text-xs text-text-2">
+                  {!karte
+                    ? t("{n} Bons ergeben zusammen {betrag} – genau wie die Abbuchung vom {datum} ({konto}, {empfaenger}).", {
+                        n: v.bons.length,
+                        betrag: euro(v.betrag_cent),
+                        datum: datum(v.datum),
+                        konto: v.konto,
+                        empfaenger: v.empfaenger || t("Ohne Empfänger"),
+                      })
+                    : passt
+                      ? t("Abbuchung über {betrag} vom {datum} ({konto}, {empfaenger}) – das sind diese {n} Rechnungen vom {von} bis {bis}.", {
+                          n: v.bons.length,
+                          betrag: euro(v.betrag_cent),
+                          datum: datum(v.datum),
+                          konto: v.konto,
+                          empfaenger: v.empfaenger || t("Ohne Empfänger"),
+                          von: datum(v.bons[0]?.datum ?? null),
+                          bis: datum(v.bons.at(-1)?.datum ?? null),
+                        })
+                      : t("Abbuchung über {betrag} vom {datum} ({konto}, {empfaenger}) – keine Auswahl der offenen Rechnungen ergibt genau diesen Betrag.", {
+                          betrag: euro(v.betrag_cent),
+                          datum: datum(v.datum),
+                          konto: v.konto,
+                          empfaenger: v.empfaenger || t("Ohne Empfänger"),
+                        })}
+                </p>
+              </div>
             </div>
-          </div>
-          <SammelBonListe bons={v.bons} />
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            <button className="knopf-zweit" disabled={arbeitet != null} onClick={() => aktion(v, "verwerfen")}>
-              {t("Gehört nicht zusammen")}
-            </button>
-            <button className="knopf-haupt" disabled={arbeitet != null} onClick={() => aktion(v, "buchen")}>
-              {arbeitet === v.id ? t("Wird übertragen …") : t("Zusammen buchen")}
-            </button>
-          </div>
-        </section>
-      ))}
+            {!passt && (
+              <div className="mb-2">
+                <Hinweis art="warnung">
+                  {v.differenz_cent > 0
+                    ? t("Am nächsten kommen diese {n} Rechnungen mit {summe} – es fehlen {differenz}. Fehlt eine Rechnung? Lade sie hoch, dann wird neu gesucht.", {
+                        n: v.bons.length, summe: euro(summe), differenz: euro(v.differenz_cent),
+                      })
+                    : t("Am nächsten kommen diese {n} Rechnungen mit {summe} – das sind {differenz} zu viel. Ist eine Rechnung doppelt oder wurde etwas erstattet?", {
+                        n: v.bons.length, summe: euro(summe), differenz: euro(-v.differenz_cent),
+                      })}
+                </Hinweis>
+              </div>
+            )}
+            <SammelBonListe bons={v.bons} />
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <button className="knopf-zweit" disabled={arbeitet != null} onClick={() => aktion(v, "verwerfen")}>
+                {passt ? t("Gehört nicht zusammen") : t("Ausblenden")}
+              </button>
+              {passt && (
+                <button className="knopf-haupt" disabled={arbeitet != null} onClick={() => aktion(v, "buchen")}>
+                  {arbeitet === v.id ? t("Wird übertragen …") : t("Zusammen buchen")}
+                </button>
+              )}
+            </div>
+          </section>
+        );
+      })}
       {meldung && <Hinweis art="fehler">{meldung}</Hinweis>}
     </div>
   );

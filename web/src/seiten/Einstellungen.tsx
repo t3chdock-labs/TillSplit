@@ -984,7 +984,11 @@ function Verbindungen() {
   );
 }
 
-type Karte = { endziffern: string; actual_konto_id: string | null; bezeichnung: string | null; anzahl_bons: number };
+type Karte = {
+  endziffern: string; actual_konto_id: string | null; bezeichnung: string | null; anzahl_bons: number;
+  /** Kreditkarte, deren Umsätze gesammelt vom Konto abgebucht werden (z. B. Amazon Visa) */
+  sammel: boolean; empfaenger: string | null;
+};
 
 /** Karte (letzte 4 Ziffern auf dem Bon) -> Actual-Konto, z. B. •••• 1234 -> DKB */
 function Karten({ konten }: { konten: Konto[] }) {
@@ -992,10 +996,10 @@ function Karten({ konten }: { konten: Konto[] }) {
   const [neu, setNeu] = useState({ endziffern: "", konto: "" });
   const [fehler, setFehler] = useState<string | null>(null);
 
-  const speichern = async (endziffern: string, konto: string | null, bezeichnung?: string | null) => {
+  const speichern = async (endziffern: string, konto: string | null, bezeichnung?: string | null, sammel?: { sammel?: boolean; empfaenger?: string }) => {
     setFehler(null);
     try {
-      await api.put(`/api/karten/${endziffern}`, { actual_konto_id: konto, bezeichnung });
+      await api.put(`/api/karten/${endziffern}`, { actual_konto_id: konto, bezeichnung, ...sammel });
       neuLaden();
     } catch (e) {
       setFehler((e as Error).message);
@@ -1031,6 +1035,38 @@ function Karten({ konten }: { konten: Konto[] }) {
               <KontoOptionen konten={konten} />
             </select>
             <span className="ml-auto text-xs text-text-3">{t("{n} Bon|{n} Bons", { n: k.anzahl_bons })}</span>
+            {k.actual_konto_id && (
+              <div className="w-full space-y-2 sm:pl-[6.75rem]">
+                <label className="flex cursor-pointer items-start gap-2 text-[13px]">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={k.sammel}
+                    onChange={(e) => speichern(k.endziffern, k.actual_konto_id, undefined, { sammel: e.target.checked })}
+                  />
+                  <span>
+                    {t("Kreditkarte mit Sammelabbuchung")}
+                    <span className="block text-xs text-text-3">
+                      {t("Die Umsätze werden gesammelt vom gewählten Konto abgebucht (z. B. Amazon Visa). TillSplit sucht dann nicht jede Rechnung einzeln, sondern ordnet jede Abbuchung den offenen Rechnungen dieser Karte zu – egal, an welchem Tag abgebucht wird.")}
+                    </span>
+                  </span>
+                </label>
+                {k.sammel && (
+                  <label className="block text-xs text-text-2">
+                    {t("Empfänger der Abbuchung (Suchwörter, durch Komma getrennt)")}
+                    <input
+                      className="eingabe mt-1 w-full max-w-sm py-1.5 text-[13px]"
+                      placeholder="Openbank, Zinia"
+                      defaultValue={k.empfaenger ?? ""}
+                      onBlur={(e) => e.target.value !== (k.empfaenger ?? "") && speichern(k.endziffern, k.actual_konto_id, undefined, { empfaenger: e.target.value })}
+                    />
+                    <span className="mt-1 block text-text-3">
+                      {t("Leer lassen sucht nach Openbank und Zinia. Trag hier ein, was in deinem Kontoauszug bei der Kartenabbuchung steht – nicht nur „Amazon“, das passt auch auf normale Amazon-Lastschriften. Wichtig: Die Karte muss den vollen Betrag abbuchen – bei Teilzahlung passt die Summe nie.")}
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>

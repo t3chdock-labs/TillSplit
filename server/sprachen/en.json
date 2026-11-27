@@ -312,5 +312,7 @@
   "Rückgabe zu Bon {nr}": "Return for receipt {nr}",
   "Der Bon ist schon in Actual gebucht": "The receipt is already booked in Actual",
   "Der Bon wird noch gelesen": "The receipt is still being read",
-  "Diese Rückgabe wurde von Hand erfasst – ihr Bild ist der Kaufbeleg und kann nicht neu gelesen werden": "This return was recorded by hand – its image is the purchase receipt and cannot be read again"
+  "Diese Rückgabe wurde von Hand erfasst – ihr Bild ist der Kaufbeleg und kann nicht neu gelesen werden": "This return was recorded by hand – its image is the purchase receipt and cannot be read again",
+  "Die Rechnungen ergeben nicht genau die Abbuchung – bitte fehlende Rechnung ergänzen": "The invoices do not add up to exactly the debit – please add the missing invoice",
+  "Mit Karte •••• {karte} bezahlt – wird mit der nächsten Kartenabrechnung zusammen gebucht.": "Paid with card •••• {karte} – will be booked together with the next card statement."
 }

@@ -333,10 +333,11 @@ async function abbuchungenSuchen(
 type SammelBon = { id: number; datum: string; summe_cent: number; haendler: string | null; konto: string | null };
 
 /** Bons für eine Sammelbuchung laden und prüfen: alle im Haushalt, noch nicht gebucht, mit Karte bezahlt, mit Datum und Summe. */
-async function sammelBonsLaden(haushaltId: number, bonIds: number[]): Promise<SammelBon[]> {
+async function sammelBonsLaden(haushaltId: number, bonIds: number[], karte = false): Promise<SammelBon[]> {
   const ids = [...new Set(bonIds)];
-  if (ids.length < 2) throw new Error(t("Für eine Sammelbuchung mindestens zwei Bons auswählen"));
-  if (ids.length > 50) throw new Error(t("Höchstens 50 Bons pro Sammelbuchung"));
+  // Kartenabrechnung: auch eine einzelne Rechnung, und bis zu 200 im Monat
+  if (ids.length < (karte ? 1 : 2)) throw new Error(t("Für eine Sammelbuchung mindestens zwei Bons auswählen"));
+  if (ids.length > (karte ? 200 : 50)) throw new Error(t("Höchstens 50 Bons pro Sammelbuchung"));
   const bons = await sql<(SammelBon & { status: string; zahlung: string; dublette_von: number | null })[]>`
     select b.id, to_char(b.datum, 'YYYY-MM-DD') as datum, b.summe_cent, h.name as haendler, b.actual_konto_id as konto,
            b.status, b.zahlung, b.dublette_von
@@ -358,10 +359,13 @@ export async function sammelKandidatenSuchen(haushaltId: number, bonIds: number[
   const bons = await sammelBonsLaden(haushaltId, bonIds);
   const summe = bons.reduce((s, b) => s + b.summe_cent, 0);
   const letztes = bons.at(-1)!.datum;
+  const [karte] = await sql`
+    select 1 from bons b join kartenzuordnung k on k.haushalt_id = b.haushalt_id and k.endziffern = b.karte_endziffern and k.sammel
+     where b.haushalt_id = ${haushaltId} and b.id in ${sql(bons.map((b) => b.id))} limit 1`;
   const treffer = await abbuchungenSuchen(haushaltId, {
     passt: (cent) => cent === summe,
     von: tagVerschieben(bons[0].datum, -4),
-    bis: tagVerschieben(letztes, 21),
+    bis: tagVerschieben(letztes, karte ? 60 : 21),
     bezug: letztes,
     haendler: [...new Set(bons.map((b) => b.haendler).filter((h): h is string => Boolean(h)))],
     konto: bons.every((b) => b.konto === bons[0].konto) ? bons[0].konto : null,
@@ -390,6 +394,8 @@ export async function sammelVorschlaegeSuchen(haushaltId: number): Promise<numbe
       from bons b join haendler h on h.id = b.haendler_id
      where b.haushalt_id = ${haushaltId} and b.status in ('geprueft','wartet') and b.zahlung <> 'bar'
        and b.actual_tx_id is null and b.dublette_von is null and b.datum is not null and b.summe_cent > 0
+       -- Bons einer Sammelkarte laufen über die Kartenabrechnung
+       and not exists (select 1 from kartenzuordnung k where k.haushalt_id = b.haushalt_id and k.endziffern = b.karte_endziffern and k.sammel)
      order by b.datum, b.id`;
   const nachGeschaeft = new Map<number, (SammelBon & { haendler_id: number })[]>();
   for (const b of offen) {
@@ -401,10 +407,11 @@ export async function sammelVorschlaegeSuchen(haushaltId: number): Promise<numbe
   const vorschlaege: { ids: number[]; k: Kandidat }[] = [];
   for (const bons of nachGeschaeft.values()) {
     if (bons.length < 2) continue;
-    const groesster = Math.max(...bons.map((b) => b.summe_cent));
+    // kleinste mögliche Summe: die zwei kleinsten Bons (nicht der größte – sonst fällt jede Abbuchung unter einem großen offenen Bon heraus)
+    const [k1, k2] = bons.map((b) => b.summe_cent).sort((x, y) => x - y);
     const alle = bons.reduce((s, b) => s + b.summe_cent, 0);
     const abbuchungen = await abbuchungenSuchen(haushaltId, {
-      passt: (cent) => cent > groesster && cent <= alle,
+      passt: (cent) => cent >= k1 + k2 && cent <= alle,
       von: tagVerschieben(bons[0].datum, -4),
       bis: tagVerschieben(bons.at(-1)!.datum, 21),
       bezug: bons.at(-1)!.datum,
@@ -433,7 +440,7 @@ export async function sammelVorschlaegeSuchen(haushaltId: number): Promise<numbe
   }
 
   await sql.begin(async (tx) => {
-    await tx`delete from sammel_vorschlaege where haushalt_id = ${haushaltId} and not verworfen`;
+    await tx`delete from sammel_vorschlaege where haushalt_id = ${haushaltId} and not verworfen and karte is null`;
     for (const { ids, k } of vorschlaege) {
       await tx`
         insert into sammel_vorschlaege (haushalt_id, bon_ids, actual_tx_id, budget, konto_id, konto, datum, betrag_cent, empfaenger)
@@ -444,11 +451,129 @@ export async function sammelVorschlaegeSuchen(haushaltId: number): Promise<numbe
   return vorschlaege.length;
 }
 
+/** Suchwörter für den Empfänger einer Kartenabbuchung, wenn keine eingestellt sind */
+// nur der Kartenherausgeber: „Amazon“ allein passt auch auf normale Amazon-Lastschriften
+const SAMMELKARTE_EMPFAENGER = ["Openbank", "Zinia"];
+
+type Sammelkarte = { endziffern: string; actual_konto_id: string; bezeichnung: string | null; empfaenger: string | null };
+
+/** Gesammelt abgebuchte Karten eines Haushalts */
+const sammelkarten = (haushaltId: number) =>
+  sql<Sammelkarte[]>`select endziffern, actual_konto_id, bezeichnung, empfaenger from kartenzuordnung where haushalt_id = ${haushaltId} and sammel`;
+
+/** Ist die Karte eine Sammelkarte? */
+async function istSammelkarte(haushaltId: number, endziffern: string | null): Promise<boolean> {
+  if (!endziffern) return false;
+  const [z] = await sql`select 1 from kartenzuordnung where haushalt_id = ${haushaltId} and endziffern = ${endziffern} and sammel`;
+  return Boolean(z);
+}
+
+/**
+ * Lösungen für eine Kartenabbuchung: offene Rechnungen (nach Datum) von der ältesten an, bis die Summe genau passt.
+ * Wird keine Folge genau getroffen, darf in ihr eine Rechnung fehlen (z. B. erst in der nächsten Abrechnung belastet).
+ * Liefert die eindeutige Lösung oder – ohne Treffer – die nächstliegende Folge samt Differenz.
+ */
+export function kartenAbrechnungFinden(bons: { id: number; summe_cent: number }[], ziel: number): { ids: number[]; differenz: number } | null {
+  const loesungen = (liste: number[][]) => [...new Map(liste.map((l) => [l.join(","), l])).values()];
+  const folgen: number[][] = [];
+  let summe = 0;
+  for (let i = 0; i < bons.length; i++) {
+    summe += bons[i].summe_cent;
+    if (summe === ziel) folgen.push(bons.slice(0, i + 1).map((b) => b.id));
+  }
+  if (folgen.length === 1) return { ids: folgen[0], differenz: 0 };
+  if (folgen.length > 1) return null; // mehrdeutig (z. B. durch Erstattungen) – lieber von Hand wählen
+
+  const mitLuecke: number[][] = [];
+  summe = 0;
+  for (let i = 0; i < bons.length && mitLuecke.length < 3; i++) {
+    summe += bons[i].summe_cent;
+    for (let j = 0; j < i; j++) {
+      if (summe - bons[j].summe_cent === ziel) mitLuecke.push(bons.slice(0, i + 1).filter((_, k) => k !== j).map((b) => b.id));
+    }
+  }
+  const eindeutig = loesungen(mitLuecke);
+  if (eindeutig.length === 1) return { ids: eindeutig[0], differenz: 0 };
+  if (eindeutig.length > 1) return null;
+
+  // nichts passt genau: nächstliegende Folge zeigen, damit sich die fehlende Rechnung finden lässt
+  let beste = { ids: [] as number[], differenz: ziel };
+  summe = 0;
+  for (let i = 0; i < bons.length; i++) {
+    summe += bons[i].summe_cent;
+    if (Math.abs(ziel - summe) < Math.abs(beste.differenz)) beste = { ids: bons.slice(0, i + 1).map((b) => b.id), differenz: ziel - summe };
+  }
+  return beste.ids.length ? beste : null;
+}
+
+/**
+ * Kartenabrechnungen suchen: Für jede Sammelkarte die Abbuchungen auf dem zugeordneten Konto (Empfänger passt)
+ * der Reihe nach den offenen Rechnungen dieser Karte zuordnen – egal, an welchem Tag abgebucht wird.
+ * Gebucht wird erst nach Bestätigung.
+ */
+export async function kartenAbrechnungenSuchen(haushaltId: number): Promise<number> {
+  let anzahl = 0;
+  for (const karte of await sammelkarten(haushaltId)) {
+    const offen = await sql<{ id: number; datum: string; summe_cent: number }[]>`
+      select id, to_char(datum, 'YYYY-MM-DD') as datum, summe_cent from bons
+       where haushalt_id = ${haushaltId} and karte_endziffern = ${karte.endziffern} and status in ('geprueft','wartet')
+         and zahlung <> 'bar' and actual_tx_id is null and dublette_von is null and datum is not null and summe_cent is not null
+       order by datum, id`;
+    const vorschlaege: { ids: number[]; differenz: number; k: Kandidat }[] = [];
+    if (offen.length) {
+      // ganze Phrasen vergleichen („Amazon Payments“ soll nicht auf jedes „Amazon …“ passen)
+      const woerter = (karte.empfaenger ?? "").split(",").map((w) => w.trim().toLowerCase()).filter(Boolean);
+      const phrasen = woerter.length ? woerter : SAMMELKARTE_EMPFAENGER.map((w) => w.toLowerCase());
+      const heute = new Date().toISOString().slice(0, 10);
+      const abbuchungen = (
+        await abbuchungenSuchen(haushaltId, {
+          passt: (cent) => cent > 0,
+          von: tagVerschieben(offen[0].datum, -4),
+          bis: heute,
+          bezug: offen[0].datum,
+          haendler: [],
+          konto: karte.actual_konto_id,
+          ausser: [],
+        })
+      )
+        .filter((k) => !k.aufgeteilt && phrasen.some((p) => k.empfaenger.toLowerCase().includes(p)))
+        .sort((a, b) => a.datum.localeCompare(b.datum));
+      let rest: { id: number; datum: string; summe_cent: number }[] = [...offen];
+      for (const k of abbuchungen) {
+        // Rechnungen bis zum Tag der Abbuchung
+        const moeglich = rest.filter((b) => b.datum <= k.datum);
+        const loesung = kartenAbrechnungFinden(moeglich, -k.betrag_cent);
+        if (!loesung) continue;
+        vorschlaege.push({ ...loesung, k });
+        // zugeordnete Rechnungen stehen für die nächste Abrechnung nicht mehr zur Wahl
+        if (loesung.differenz === 0) rest = rest.filter((b) => !loesung.ids.includes(b.id));
+      }
+    }
+    await sql.begin(async (tx) => {
+      await tx`delete from sammel_vorschlaege where haushalt_id = ${haushaltId} and karte = ${karte.endziffern} and not verworfen`;
+      for (const { ids, differenz, k } of vorschlaege) {
+        await tx`
+          insert into sammel_vorschlaege (haushalt_id, bon_ids, actual_tx_id, budget, konto_id, konto, datum, betrag_cent, empfaenger, karte, differenz_cent)
+          values (${haushaltId}, ${ids}, ${k.id}, ${k.budget}, ${k.konto_id}, ${k.konto}, ${k.datum}, ${-k.betrag_cent}, ${k.empfaenger},
+                  ${karte.endziffern}, ${differenz})
+          on conflict (haushalt_id, actual_tx_id) do nothing`;
+      }
+    });
+    anzahl += vorschlaege.length;
+  }
+  return anzahl;
+}
+
 /** Offene Vorschläge mit den beteiligten Bons; veraltete (Bon gebucht oder gelöscht, Abbuchung vergeben) fallen heraus. */
 export async function sammelVorschlaege(haushaltId: number) {
-  const zeilen = await sql<{ id: number; bon_ids: number[]; datum: string; betrag_cent: number; konto: string; empfaenger: string }[]>`
-    select v.id, v.bon_ids, to_char(v.datum, 'YYYY-MM-DD') as datum, v.betrag_cent, v.konto, v.empfaenger
+  const zeilen = await sql<{
+    id: number; bon_ids: number[]; datum: string; betrag_cent: number; konto: string; empfaenger: string;
+    karte: string | null; karte_name: string | null; differenz_cent: number;
+  }[]>`
+    select v.id, v.bon_ids, to_char(v.datum, 'YYYY-MM-DD') as datum, v.betrag_cent, v.konto, v.empfaenger,
+           v.karte, k.bezeichnung as karte_name, v.differenz_cent
       from sammel_vorschlaege v
+      left join kartenzuordnung k on k.haushalt_id = v.haushalt_id and k.endziffern = v.karte
      where v.haushalt_id = ${haushaltId} and not v.verworfen
        and not exists (select 1 from bons b where b.haushalt_id = ${haushaltId} and b.actual_tx_id = v.actual_tx_id)
        and (select count(*) from bons b
@@ -466,10 +591,12 @@ export async function sammelVorschlaege(haushaltId: number) {
 
 /** Vorschlag bestätigen: die Bons gemeinsam auf die vorgeschlagene Abbuchung buchen. */
 export async function sammelVorschlagBuchen(haushaltId: number, vorschlagId: number): Promise<void> {
-  const [v] = await sql<{ bon_ids: number[]; actual_tx_id: string; budget: string }[]>`
-    select bon_ids, actual_tx_id, budget from sammel_vorschlaege where id = ${vorschlagId} and haushalt_id = ${haushaltId} and not verworfen`;
+  const [v] = await sql<{ bon_ids: number[]; actual_tx_id: string; budget: string; karte: string | null; differenz_cent: number }[]>`
+    select bon_ids, actual_tx_id, budget, karte, differenz_cent from sammel_vorschlaege
+     where id = ${vorschlagId} and haushalt_id = ${haushaltId} and not verworfen`;
   if (!v) throw new Error(t("Vorschlag nicht gefunden"));
-  await sammelBonsLaden(haushaltId, v.bon_ids);
+  if (v.differenz_cent !== 0) throw new Error(t("Die Rechnungen ergeben nicht genau die Abbuchung – bitte fehlende Rechnung ergänzen"));
+  await sammelBonsLaden(haushaltId, v.bon_ids, v.karte != null);
   await aufBuchungVerteilen(haushaltId, v.bon_ids, v.actual_tx_id, v.budget);
 }
 
@@ -608,8 +735,10 @@ export type AbgleichErgebnis = { ergebnis: "gebucht" | "wartet" | "auswahl" | "k
  * - Karte: genau eine passende Abbuchung -> aufteilen; keine -> auf den nächsten Bankimport warten
  */
 export async function abgleichen(haushaltId: number, bonId: number): Promise<AbgleichErgebnis> {
-  const [bon] = await sql<{ status: string; zahlung: string; actual_konto_id: string | null; dublette_von: number | null; erstattung: boolean }[]>`
-    select status, zahlung, actual_konto_id, dublette_von, erstattung from bons where id = ${bonId} and haushalt_id = ${haushaltId}`;
+  const [bon] = await sql<{
+    status: string; zahlung: string; actual_konto_id: string | null; dublette_von: number | null; erstattung: boolean; karte_endziffern: string | null;
+  }[]>`
+    select status, zahlung, actual_konto_id, dublette_von, erstattung, karte_endziffern from bons where id = ${bonId} and haushalt_id = ${haushaltId}`;
   if (!bon || bon.status === "gebucht") return { ergebnis: "gebucht", text: t("Bereits gebucht") };
   // mögliches Duplikat nie buchen, sonst landet der Einkauf doppelt in Actual
   if (bon.dublette_von) {
@@ -643,6 +772,13 @@ export async function abgleichen(haushaltId: number, bonId: number): Promise<Abg
         ? t("Als Bar-Erstattung in Actual gebucht")
         : einstellung.bargeld === "umbuchen" ? t("Von der Bargeld-Kategorie auf die Bereiche umgebucht") : t("Als Barausgabe in Actual gebucht"),
     };
+  }
+
+  // Sammelkarte (z. B. Amazon Visa): nicht einzeln suchen, die Rechnung kommt mit der nächsten Kartenabrechnung
+  if (bon.zahlung !== "bar" && (await istSammelkarte(haushaltId, bon.karte_endziffern))) {
+    const text = t("Mit Karte •••• {karte} bezahlt – wird mit der nächsten Kartenabrechnung zusammen gebucht.", { karte: bon.karte_endziffern! });
+    await hinweis("wartet", text);
+    return { ergebnis: "wartet", text };
   }
 
   // Erstattung: späte Gutschriften nur automatisch nehmen, wenn der Empfänger zum Geschäft passt
@@ -696,6 +832,10 @@ export async function alleAbgleichen(haushaltId: number): Promise<Record<Abgleic
   // übrig gebliebene Bons: ergibt die Summe mehrerer zusammen eine Abbuchung (z. B. Amazon)?
   if (zaehler.wartet + zaehler.auswahl >= 2) {
     await sammelVorschlaegeSuchen(haushaltId).catch((e) => console.warn(`Sammel-Vorschläge Haushalt ${haushaltId}:`, (e as Error).message));
+  }
+  // Rechnungen von Sammelkarten den Kartenabrechnungen zuordnen
+  if (zaehler.wartet) {
+    await kartenAbrechnungenSuchen(haushaltId).catch((e) => console.warn(`Kartenabrechnungen Haushalt ${haushaltId}:`, (e as Error).message));
   }
   return zaehler;
 }

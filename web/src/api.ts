@@ -173,6 +173,11 @@ export type SammelVorschlag = {
   konto: string;
   empfaenger: string;
   bons: SammelBon[];
+  /** Kartenabrechnung einer Sammelkarte: letzte 4 Ziffern und Bezeichnung */
+  karte: string | null;
+  karte_name: string | null;
+  /** ≠ 0: keine Auswahl offener Rechnungen ergibt genau die Abbuchung (Abbuchung minus Rechnungen) */
+  differenz_cent: number;
 };
 
 export type Gruppe = {

@@ -5,6 +5,22 @@
 Alle wichtigen Änderungen an TillSplit. Die Versionen folgen [Semantic Versioning](https://semver.org/lang/de/);
 Docker-Images: `t3chdocklabs/tillsplit:<version>` und `ghcr.io/t3chdock-labs/tillsplit:<version>`.
 
+## [0.1.6] – 2026-11-28
+
+### Neu
+- **Kreditkarte mit Sammelabbuchung** (z. B. Amazon Visa): Unter *Karten → Konten* lässt sich eine Karte so
+  kennzeichnen. Ihre Rechnungen werden dann nicht einzeln gesucht, sondern warten auf die nächste Kartenabbuchung.
+  Taucht diese auf dem Konto auf, ordnet TillSplit ihr die offenen Rechnungen der Karte von der ältesten an zu, bis die
+  Summe genau passt – egal, an welchem Tag abgebucht wird. Eine einzelne fehlende Rechnung in der Folge wird erkannt.
+  Gebucht wird nach Bestätigung, aufgeteilt nach den Bereichen aller Rechnungen.
+- Passt keine Auswahl genau, zeigt die Kartenabrechnung die nächstliegende Auswahl samt Differenz („es fehlen 5,00 €“).
+  Nach dem Nachreichen der Rechnung wird neu gesucht.
+- „Zusammen buchen“ von Hand sucht bei Rechnungen einer Sammelkarte bis 60 Tage nach der letzten Rechnung.
+
+### Behoben
+- **Sammelbuchung:** Lag ein großer Bon desselben Geschäfts offen, wurde für kleinere Abbuchungen keine
+  Sammelbuchung mehr vorgeschlagen.
+
 ## [0.1.5] – 2026-11-27
 
 ### Behoben
@@ -83,6 +99,7 @@ Docker-Images: `t3chdocklabs/tillsplit:<version>` und `ghcr.io/t3chdock-labs/til
 
 Erste öffentliche Version.
 
+[0.1.6]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.2...v0.1.3

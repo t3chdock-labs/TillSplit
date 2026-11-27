@@ -1,4 +1,4 @@
-# TillSplit 0.1.5
+# TillSplit 0.1.6
 
 [![Lizenz: AGPL-3.0](https://img.shields.io/badge/Lizenz-AGPL--3.0-blue.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-unterst%C3%BCtzen-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/tamperold)
@@ -21,7 +21,7 @@ Kassenbons erfassen (Foto, Screenshot, PDF), Artikel für Artikel auslesen, nach
 ### Bar, Karte und Konten
 
 - **Beim Hochladen** wird gefragt, wie bezahlt wurde: „Vom Bon“ (automatisch erkennen), „Karte / Konto“ oder „Bar“. Optional lässt sich das Actual-Konto vorgeben, z. B. „Haushalt“ oder „DKB“.
-- **Karte auf dem Bon:** Bei Kartenzahlung liest TillSplit die letzten 4 Ziffern der Karte (nie mehr). Unter *Einstellungen → KI & Actual → Karten → Konten* wird jede Karte einem Konto zugeordnet. Wählst du beim Prüfen einmal von Hand ein Konto, merkt sich TillSplit die Karte automatisch.
+- **Karte auf dem Bon:** Bei Kartenzahlung liest TillSplit die letzten 4 Ziffern der Karte (nie mehr). Unter *Einstellungen → KI & Actual → Karten → Konten* wird jede Karte einem Konto zugeordnet. Wählst du beim Prüfen einmal von Hand ein Konto, merkt sich TillSplit die Karte automatisch. Eine Kreditkarte, die gesammelt abgebucht wird (z. B. Amazon Visa), kennzeichnest du dort als *Sammelabbuchung*: TillSplit ordnet dann jede Kartenabbuchung den offenen Rechnungen dieser Karte zu.
 - **Barzahlung** (Einstellungen → Actual → Barzahlungen):
   - **Aus Kategorie umbuchen** (Standard, ohne eigenes Bargeld-Konto): Abhebungen am Geldautomaten bekommen in Actual eine Kategorie wie „Bargeld“ (am einfachsten per Actual-Regel auf den Empfänger der Abhebung). Für jeden Barbon legt TillSplit im gewählten Konto eine Buchung über **0 €** an: +Summe auf „Bargeld“, −Teilbeträge auf Lebensmittel, Drogerie usw. Der Kontostand und der Bankabgleich bleiben unberührt, aber die Ausgaben stehen in den richtigen Kategorien. Was auf „Bargeld“ übrig bleibt, ist Bargeld ohne Bon.
   - **Eigenes Bargeld-Konto:** Barbons werden dort als Ausgabe gebucht.
@@ -37,11 +37,11 @@ Ablage der Originale: `<RECEIPT_DIR>/<Jahr>/<Monat>/<Datum>_<Geschäft>_<Summe>.
 Fertige Images für amd64 und arm64:
 
 ```bash
-docker pull t3chdocklabs/tillsplit:0.1.5        # Docker Hub
-docker pull ghcr.io/t3chdock-labs/tillsplit:0.1.5  # GitHub Container Registry
+docker pull t3chdocklabs/tillsplit:0.1.6        # Docker Hub
+docker pull ghcr.io/t3chdock-labs/tillsplit:0.1.6  # GitHub Container Registry
 ```
 
-Oder selbst bauen: `docker build -t tillsplit:0.1.5 .` (bei mehreren Knoten in die eigene Registry pushen).
+Oder selbst bauen: `docker build -t tillsplit:0.1.6 .` (bei mehreren Knoten in die eigene Registry pushen).
 
 ### 2. Secrets anlegen
 
@@ -163,7 +163,7 @@ Im *Admin-Bereich → Backups*: Zeitplan (nur von Hand, alle 6/12 Stunden, tägl
 
 ```bash
 # 1. entschlüsseln (im TillSplit-Container oder mit Node auf dem Host)
-docker run --rm -i -e BACKUP_PASSWORD='…' -v "$PWD:/b" t3chdocklabs/tillsplit:0.1.5 \
+docker run --rm -i -e BACKUP_PASSWORD='…' -v "$PWD:/b" t3chdocklabs/tillsplit:0.1.6 \
   node dist/werkzeuge/backup-entschluesseln.js /b/tillsplit-….tar.gz.enc > backup.tar.gz
 # 2. auspacken: datenbank.dump, schluessel.txt, info.json und die Bon-Ordner (data/bons/…)
 tar -xzf backup.tar.gz

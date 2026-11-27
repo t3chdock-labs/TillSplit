@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { actualEinstellung, actualKategorien, actualKonten, actualStatus, budgetNamen, buchungsBudgets, neuAufteilen, type ActualEinstellung } from "../actual.js";
+import { actualEinstellung, actualKategorien, alleAbgleichen, actualKonten, actualStatus, budgetNamen, buchungsBudgets, neuAufteilen, type ActualEinstellung } from "../actual.js";
 import { regelLernen } from "../regeln.js";
 import { sorteSaeubern } from "../verarbeitung.js";
 import { httpFehler, nurAdmin, protokollieren, zugriff } from "../auth.js";
@@ -360,14 +360,14 @@ export async function stammdatenRouten(app: FastifyInstance) {
     const h = zugriff(req, "verwalten");
     return sql`
       select coalesce(k.endziffern, b.karte_endziffern) as endziffern, k.actual_konto_id, k.bezeichnung,
-             count(b.id)::int as anzahl_bons
+             coalesce(k.sammel, false) as sammel, k.empfaenger, count(b.id)::int as anzahl_bons
         from (select * from kartenzuordnung where haushalt_id = ${h}) k
         full join (select * from bons where haushalt_id = ${h}) b on b.karte_endziffern = k.endziffern
        where coalesce(k.endziffern, b.karte_endziffern) is not null
-       group by 1, 2, 3
-       order by 4 desc, 1`;
+       group by 1, 2, 3, 4, 5
+       order by 6 desc, 1`;
   });
-  app.put<{ Params: { endziffern: string }; Body: { actual_konto_id: string | null; bezeichnung?: string | null } }>(
+  app.put<{ Params: { endziffern: string }; Body: { actual_konto_id: string | null; bezeichnung?: string | null; sammel?: boolean; empfaenger?: string | null } }>(
     "/api/karten/:endziffern",
     async (req, antwort) => {
       const h = zugriff(req, "verwalten");
@@ -375,18 +375,28 @@ export async function stammdatenRouten(app: FastifyInstance) {
       if (!/^\d{4}$/.test(endziffern)) return antwort.code(400).send({ fehler: "Bitte genau 4 Ziffern angeben" });
       const konto = req.body?.actual_konto_id ? String(req.body.actual_konto_id).slice(0, 100) : null;
       const bezeichnung = req.body?.bezeichnung ? String(req.body.bezeichnung).slice(0, 60) : null;
+      // Sammelkarte: nur ändern, wenn mitgeschickt
+      const sammel = typeof req.body?.sammel === "boolean" ? req.body.sammel : null;
+      const empfaenger = req.body?.empfaenger === undefined ? undefined : String(req.body.empfaenger ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 120) || null;
       if (!konto) {
         await sql`delete from kartenzuordnung where haushalt_id = ${h} and endziffern = ${endziffern}`;
       } else {
         await sql`
-          insert into kartenzuordnung (haushalt_id, endziffern, actual_konto_id, bezeichnung)
-          values (${h}, ${endziffern}, ${konto}, ${bezeichnung})
+          insert into kartenzuordnung (haushalt_id, endziffern, actual_konto_id, bezeichnung, sammel, empfaenger)
+          values (${h}, ${endziffern}, ${konto}, ${bezeichnung}, ${sammel ?? false}, ${empfaenger ?? null})
           on conflict (haushalt_id, endziffern) do update set actual_konto_id = excluded.actual_konto_id,
-            bezeichnung = coalesce(excluded.bezeichnung, kartenzuordnung.bezeichnung)`;
+            bezeichnung = coalesce(excluded.bezeichnung, kartenzuordnung.bezeichnung),
+            sammel = ${sammel == null ? sql`kartenzuordnung.sammel` : sql`excluded.sammel`},
+            empfaenger = ${empfaenger === undefined ? sql`kartenzuordnung.empfaenger` : sql`excluded.empfaenger`}`;
         // offene Bons mit dieser Karte bekommen das Konto, sofern nicht von Hand gewählt
         await sql`
           update bons set actual_konto_id = ${konto}, konto_quelle = 'karte'
            where haushalt_id = ${h} and karte_endziffern = ${endziffern} and status <> 'gebucht' and coalesce(konto_quelle, '') <> 'hand'`;
+      }
+      // Sammelkarte ein- oder ausgeschaltet (oder anderer Empfänger): offene Bons im Hintergrund neu abgleichen
+      if (sammel != null || empfaenger !== undefined) {
+        await sql`delete from sammel_vorschlaege where haushalt_id = ${h} and karte = ${endziffern} and not verworfen`;
+        void alleAbgleichen(h).catch((e) => console.warn(`Abgleich nach Kartenänderung:`, (e as Error).message));
       }
       return { ok: true };
     },
