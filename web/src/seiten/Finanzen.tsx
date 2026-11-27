@@ -223,7 +223,10 @@ export function Finanzen() {
     const vSumme = (p?: string) => (p ? vKonten.reduce((s, k) => s + (vWert.get(`${p}|${k}`) ?? 0), 0) : 0);
     const bisher = Math.max(1, perioden.filter((p) => p <= iso(new Date())).length);
 
-    return { kreis, empfaenger, verlauf, vermoegen, perioden, ausgaben, bisher, vermoegenJetzt: vSumme(vLetzte), vermoegenStart: vSumme(vErste), hatVermoegen: vKonten.length > 0 };
+    // Nur Raster anbieten, die mehr als einen Balken ergeben (Monat in der Monatsansicht wäre ein einziger Balken)
+    const rasterAuswahl = (Object.keys(rasterNamen) as Raster[]).filter((r) => r === raster || (von && bis && periodenListe(von, bis, r).length > 1));
+
+    return { kreis, empfaenger, verlauf, vermoegen, perioden, ausgaben, bisher, rasterAuswahl, vermoegenJetzt: vSumme(vLetzte), vermoegenStart: vSumme(vErste), hatVermoegen: vKonten.length > 0 };
   }, [daten, ebene, gruppe, kategorie, bereich, raster, f.rand, f.leise, f.text]);
 
   const k = daten?.kennzahlen;
@@ -398,12 +401,12 @@ export function Finanzen() {
               </Abschnitt>
             </div>
 
-            {diagramme.perioden.length > 1 && (
+            {(diagramme.perioden.length > 1 || rasterWahl != null) && (
               <Abschnitt
                 titel={`${gruppe ? t("Ausgaben") : t("Einnahmen und Ausgaben")} ${rasterNach[raster]}`}
                 rechts={
                   <div className="flex flex-wrap justify-end gap-1">
-                    {(Object.keys(rasterNamen) as Raster[]).map((r) => (
+                    {diagramme.rasterAuswahl.map((r) => (
                       <button key={r} className={`chip text-xs ${raster === r ? "chip-aktiv" : ""}`} onClick={() => setRasterWahl(r)}>
                         {rasterNamen[r]}
                       </button>

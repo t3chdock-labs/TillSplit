@@ -281,7 +281,9 @@ export function Uebersicht() {
     };
     // Für den Durchschnitt nur Perioden bis heute zählen
     const bisher = Math.max(1, perioden.filter((p) => p <= iso(new Date())).length);
-    return { kreis, balken, verlauf, tage, perioden, bisher };
+    // Nur Raster anbieten, die mehr als einen Balken ergeben (Monat in der Monatsansicht wäre ein einziger Balken)
+    const rasterAuswahl = (Object.keys(rasterNamen) as Raster[]).filter((r) => r === raster || (von && bis && periodenListe(von, bis, r).length > 1));
+    return { kreis, balken, verlauf, tage, perioden, bisher, rasterAuswahl };
   }, [daten, ebene, unter, bereich, raster, f.rand, f.leise, f.text]);
 
   const k = daten?.kennzahlen;
@@ -437,12 +439,12 @@ export function Uebersicht() {
               </Abschnitt>
             </div>
 
-            {diagramme.perioden.length > 1 && (
+            {(diagramme.perioden.length > 1 || rasterWahl != null) && (
               <Abschnitt
                 titel={`${t("Verlauf")} ${rasterNach[raster]}`}
                 rechts={
                   <div className="flex flex-wrap justify-end gap-1">
-                    {(Object.keys(rasterNamen) as Raster[]).map((r) => (
+                    {diagramme.rasterAuswahl.map((r) => (
                       <button key={r} className={`chip text-xs ${raster === r ? "chip-aktiv" : ""}`} onClick={() => setRasterWahl(r)}>
                         {rasterNamen[r]}
                       </button>

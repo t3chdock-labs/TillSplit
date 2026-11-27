@@ -5,6 +5,13 @@
 Alle wichtigen Änderungen an TillSplit. Die Versionen folgen [Semantic Versioning](https://semver.org/lang/de/);
 Docker-Images: `t3chdocklabs/tillsplit:<version>` und `ghcr.io/t3chdock-labs/tillsplit:<version>`.
 
+## [0.1.5] – 2026-11-27
+
+### Behoben
+- **Finanzen und Übersicht:** Ein Klick auf ein Raster (z. B. „Monate“ in der Monatsansicht) ließ den Bereich
+  „Einnahmen und Ausgaben“ bzw. „Verlauf“ samt Knöpfen verschwinden. Angeboten werden jetzt nur Raster, die mehr
+  als einen Balken ergeben.
+
 ## [0.1.4] – 2026-11-13
 
 ### Neu
@@ -76,6 +83,7 @@ Docker-Images: `t3chdocklabs/tillsplit:<version>` und `ghcr.io/t3chdock-labs/til
 
 Erste öffentliche Version.
 
+[0.1.5]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/t3chdock-labs/TillSplit/compare/v0.1.1...v0.1.2
